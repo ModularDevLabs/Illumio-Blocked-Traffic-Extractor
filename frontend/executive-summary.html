@@ -7,92 +7,229 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap');
-        body { font-family: 'Manrope', sans-serif; }
+
+        :root {
+            --bg: #0c0a09;
+            --panel: #1c1917;
+            --panel-strong: #111827;
+            --panel-soft: rgba(255, 255, 255, 0.04);
+            --border: rgba(255, 255, 255, 0.08);
+            --text: #f5f5f4;
+            --muted: #a8a29e;
+            --headline: #ffffff;
+            --accent: #34d399;
+            --accent-strong: #059669;
+            --accent-soft: rgba(52, 211, 153, 0.16);
+            --secondary: #22d3ee;
+            --tertiary: #d946ef;
+            --warning: #fbbf24;
+            --danger: #fb7185;
+            --hero-a: #052e2b;
+            --hero-b: #111827;
+            --hero-c: #0c0a09;
+            --bar-start: #fb7185;
+            --bar-mid: #fbbf24;
+            --bar-end: #34d399;
+            --chip-bg: rgba(5, 150, 105, 0.18);
+            --chip-text: #86efac;
+        }
+
+        body[data-theme="illumio"] {
+            --bg: #0f172a;
+            --panel: #111827;
+            --panel-strong: #0b1220;
+            --panel-soft: rgba(255, 255, 255, 0.03);
+            --border: rgba(248, 113, 113, 0.18);
+            --text: #f8fafc;
+            --muted: #cbd5e1;
+            --headline: #ffffff;
+            --accent: #f97316;
+            --accent-strong: #dc2626;
+            --accent-soft: rgba(249, 115, 22, 0.15);
+            --secondary: #f59e0b;
+            --tertiary: #fb7185;
+            --warning: #facc15;
+            --danger: #ef4444;
+            --hero-a: #3f0a0a;
+            --hero-b: #1f2937;
+            --hero-c: #111827;
+            --bar-start: #ef4444;
+            --bar-mid: #f97316;
+            --bar-end: #facc15;
+            --chip-bg: rgba(239, 68, 68, 0.16);
+            --chip-text: #fdba74;
+        }
+
+        body {
+            font-family: 'Manrope', sans-serif;
+            background:
+                radial-gradient(circle at top left, rgba(255,255,255,0.05), transparent 30%),
+                linear-gradient(180deg, var(--bg), #020617);
+            color: var(--text);
+            transition: background 200ms ease, color 200ms ease;
+        }
+
+        .panel {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            box-shadow: 0 18px 50px rgba(0, 0, 0, 0.24);
+        }
+
+        .panel-soft {
+            background: var(--panel-soft);
+            border: 1px solid var(--border);
+        }
+
+        .hero {
+            background: linear-gradient(135deg, var(--hero-a), var(--hero-b) 55%, var(--hero-c));
+            border: 1px solid var(--border);
+            box-shadow: 0 30px 70px rgba(0, 0, 0, 0.32);
+        }
+
+        .label {
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.28em;
+            font-size: 0.72rem;
+        }
+
+        .headline {
+            color: var(--headline);
+        }
+
+        .muted {
+            color: var(--muted);
+        }
+
+        .theme-button {
+            border: 1px solid var(--border);
+            background: var(--panel-soft);
+            color: var(--muted);
+        }
+
+        .theme-button.active {
+            background: var(--accent-soft);
+            color: var(--headline);
+            border-color: var(--accent);
+        }
+
+        .metric-accent { color: var(--accent); }
+        .metric-secondary { color: var(--secondary); }
+        .metric-tertiary { color: var(--tertiary); }
+        .metric-warning { color: var(--warning); }
+        .metric-danger { color: var(--danger); }
+
+        .chip {
+            background: var(--chip-bg);
+            color: var(--chip-text);
+        }
+
+        .bar-track {
+            height: 0.75rem;
+            border-radius: 9999px;
+            background: rgba(255, 255, 255, 0.07);
+            overflow: hidden;
+        }
+
+        .bar-fill {
+            height: 100%;
+            border-radius: 9999px;
+            background: linear-gradient(90deg, var(--bar-start), var(--bar-mid), var(--bar-end));
+        }
+
+        .finding-index {
+            background: var(--accent-soft);
+            color: var(--accent);
+        }
     </style>
 </head>
-<body class="min-h-screen bg-stone-950 text-stone-100">
+<body data-theme="default" class="min-h-screen">
     <div class="mx-auto max-w-7xl px-6 py-8 md:px-10">
         <div class="mb-8 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div>
-                <p class="mb-2 text-xs uppercase tracking-[0.4em] text-emerald-400">Executive View</p>
-                <h1 class="text-4xl font-extrabold tracking-tight text-white md:text-5xl">Blocked Traffic Executive Summary</h1>
-                <p id="fileLabel" class="mt-3 text-sm text-stone-400">Loading latest analytics...</p>
+                <p class="label mb-2">Executive View</p>
+                <h1 class="headline text-4xl font-extrabold tracking-tight md:text-5xl">Blocked Traffic Executive Summary</h1>
+                <p id="fileLabel" class="muted mt-3 text-sm">Loading latest analytics...</p>
             </div>
-            <div class="flex flex-wrap gap-3">
-                <a href="/" class="inline-flex items-center rounded-lg bg-stone-800 px-4 py-2 text-sm font-semibold hover:bg-stone-700">Back to Extractor</a>
-                <a href="/summary" class="inline-flex items-center rounded-lg bg-cyan-700 px-4 py-2 text-sm font-semibold hover:bg-cyan-600">Detailed Analytics</a>
-                <button onclick="loadExecutiveSummary()" class="inline-flex items-center rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold hover:bg-emerald-600">Refresh</button>
+            <div class="flex flex-wrap items-center gap-3">
+                <div class="flex rounded-xl p-1 panel-soft">
+                    <button id="defaultThemeBtn" type="button" onclick="applyTheme('default')" class="theme-button active rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em]">Executive Dark</button>
+                    <button id="illumioThemeBtn" type="button" onclick="applyTheme('illumio')" class="theme-button rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em]">Illumio-Inspired</button>
+                </div>
+                <a href="/" class="rounded-lg px-4 py-2 text-sm font-semibold panel-soft">Back to Extractor</a>
+                <a href="/summary" class="rounded-lg px-4 py-2 text-sm font-semibold panel-soft">Detailed Analytics</a>
+                <button onclick="loadExecutiveSummary()" class="rounded-lg px-4 py-2 text-sm font-semibold text-white" style="background: var(--accent-strong);">Refresh</button>
             </div>
         </div>
 
-        <div class="mb-8 rounded-3xl border border-emerald-900/70 bg-gradient-to-br from-emerald-950 via-stone-900 to-stone-950 p-6 shadow-2xl shadow-emerald-950/30">
+        <div class="hero mb-8 rounded-3xl p-6">
             <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-                <div class="rounded-2xl border border-white/10 bg-white/5 p-5">
-                    <p class="text-xs uppercase tracking-[0.25em] text-stone-400">Total Blocked Flows</p>
-                    <p id="totalFlows" class="mt-3 text-4xl font-extrabold text-emerald-300">0</p>
+                <div class="panel-soft rounded-2xl p-5">
+                    <p class="label">Total Blocked Flows</p>
+                    <p id="totalFlows" class="metric-accent mt-3 text-4xl font-extrabold">0</p>
                 </div>
-                <div class="rounded-2xl border border-white/10 bg-white/5 p-5">
-                    <p class="text-xs uppercase tracking-[0.25em] text-stone-400">Unique Connections</p>
-                    <p id="totalConnections" class="mt-3 text-4xl font-extrabold text-cyan-300">0</p>
+                <div class="panel-soft rounded-2xl p-5">
+                    <p class="label">Unique Connections</p>
+                    <p id="totalConnections" class="metric-secondary mt-3 text-4xl font-extrabold">0</p>
                 </div>
-                <div class="rounded-2xl border border-white/10 bg-white/5 p-5">
-                    <p class="text-xs uppercase tracking-[0.25em] text-stone-400">Environments Involved</p>
-                    <p id="environmentCount" class="mt-3 text-4xl font-extrabold text-fuchsia-300">0</p>
+                <div class="panel-soft rounded-2xl p-5">
+                    <p class="label">Environments Involved</p>
+                    <p id="environmentCount" class="metric-tertiary mt-3 text-4xl font-extrabold">0</p>
                 </div>
-                <div class="rounded-2xl border border-white/10 bg-white/5 p-5">
-                    <p class="text-xs uppercase tracking-[0.25em] text-stone-400">External / Unmanaged Flows</p>
-                    <p id="externalFlowCount" class="mt-3 text-4xl font-extrabold text-amber-300">0</p>
+                <div class="panel-soft rounded-2xl p-5">
+                    <p class="label">External / Unmanaged Flows</p>
+                    <p id="externalFlowCount" class="metric-warning mt-3 text-4xl font-extrabold">0</p>
                 </div>
-                <div class="rounded-2xl border border-white/10 bg-white/5 p-5">
-                    <p class="text-xs uppercase tracking-[0.25em] text-stone-400">Top Risky Service</p>
-                    <p id="topRiskyService" class="mt-3 text-2xl font-extrabold text-rose-300">N/A</p>
-                    <p id="topRiskyServiceFlows" class="mt-2 text-sm text-stone-400">0 flows</p>
+                <div class="panel-soft rounded-2xl p-5">
+                    <p class="label">Top Risky Service</p>
+                    <p id="topRiskyService" class="metric-danger mt-3 text-2xl font-extrabold">N/A</p>
+                    <p id="topRiskyServiceFlows" class="muted mt-2 text-sm">0 flows</p>
                 </div>
             </div>
         </div>
 
-        <div id="emptyState" class="hidden rounded-3xl border border-stone-800 bg-stone-900/80 p-10 text-center">
-            <p class="text-lg font-semibold text-stone-200">No executive analytics are available yet.</p>
-            <p class="mt-2 text-sm text-stone-400">Run a fetch or import a CSV first. This page reuses the same analytics dataset as the detailed dashboard.</p>
+        <div id="emptyState" class="panel hidden rounded-3xl p-10 text-center">
+            <p class="text-lg font-semibold">No executive analytics are available yet.</p>
+            <p class="muted mt-2 text-sm">Run a fetch or import a CSV first. This page reuses the same analytics dataset as the detailed dashboard.</p>
         </div>
 
         <div id="content" class="hidden space-y-8">
             <section class="grid gap-8 xl:grid-cols-[1.2fr_0.8fr]">
-                <div class="rounded-3xl border border-stone-800 bg-stone-900 p-6">
+                <div class="panel rounded-3xl p-6">
                     <div class="flex items-center justify-between gap-4">
                         <div>
-                            <p class="text-xs uppercase tracking-[0.35em] text-stone-500">Headline Findings</p>
-                            <h2 class="mt-2 text-2xl font-bold text-white">What stands out in this dataset</h2>
+                            <p class="label">Headline Findings</p>
+                            <h2 class="headline mt-2 text-2xl font-bold">What stands out in this dataset</h2>
                         </div>
-                        <div class="rounded-full bg-emerald-950/70 px-4 py-2 text-xs font-semibold uppercase tracking-[0.25em] text-emerald-300">Presentation Ready</div>
+                        <div class="chip rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.25em]">Presentation Ready</div>
                     </div>
                     <div id="headlineFindings" class="mt-6 grid gap-4"></div>
                 </div>
 
-                <div class="rounded-3xl border border-stone-800 bg-stone-900 p-6">
-                    <p class="text-xs uppercase tracking-[0.35em] text-stone-500">Risky Services</p>
-                    <h2 class="mt-2 text-2xl font-bold text-white">Blocked traffic by high-risk service</h2>
+                <div class="panel rounded-3xl p-6">
+                    <p class="label">Risky Services</p>
+                    <h2 class="headline mt-2 text-2xl font-bold">Blocked traffic by high-risk service</h2>
                     <div id="riskyServiceChart" class="mt-6 space-y-3"></div>
                 </div>
             </section>
 
             <section class="grid gap-8 xl:grid-cols-2">
-                <div class="rounded-3xl border border-stone-800 bg-stone-900 p-6">
-                    <p class="text-xs uppercase tracking-[0.35em] text-stone-500">Cross-Talk</p>
-                    <h2 class="mt-2 text-2xl font-bold text-white">Top environment-to-environment relationships</h2>
+                <div class="panel rounded-3xl p-6">
+                    <p class="label">Cross-Talk</p>
+                    <h2 class="headline mt-2 text-2xl font-bold">Top environment-to-environment relationships</h2>
                     <div id="crossTalkList" class="mt-6 space-y-3"></div>
                 </div>
 
-                <div class="rounded-3xl border border-stone-800 bg-stone-900 p-6">
-                    <p class="text-xs uppercase tracking-[0.35em] text-stone-500">External Spotlight</p>
-                    <h2 class="mt-2 text-2xl font-bold text-white">Most significant external / unmanaged destinations</h2>
+                <div class="panel rounded-3xl p-6">
+                    <p class="label">External Spotlight</p>
+                    <h2 class="headline mt-2 text-2xl font-bold">Most significant external / unmanaged destinations</h2>
                     <div id="externalSpotlight" class="mt-6 space-y-3"></div>
                 </div>
             </section>
 
-            <section class="rounded-3xl border border-stone-800 bg-stone-900 p-6">
-                <p class="text-xs uppercase tracking-[0.35em] text-stone-500">Environment Scorecard</p>
-                <h2 class="mt-2 text-2xl font-bold text-white">Where blocked traffic is concentrated</h2>
+            <section class="panel rounded-3xl p-6">
+                <p class="label">Environment Scorecard</p>
+                <h2 class="headline mt-2 text-2xl font-bold">Where blocked traffic is concentrated</h2>
                 <div id="environmentScorecards" class="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3"></div>
             </section>
         </div>
@@ -137,6 +274,17 @@
             ['tcp:3702', 'WSD'],
             ['udp:3702', 'WSD']
         ]);
+
+        function applyTheme(theme) {
+            document.body.dataset.theme = theme;
+            localStorage.setItem('ittExecutiveTheme', theme);
+            document.getElementById('defaultThemeBtn').classList.toggle('active', theme === 'default');
+            document.getElementById('illumioThemeBtn').classList.toggle('active', theme === 'illumio');
+        }
+
+        function loadSavedTheme() {
+            applyTheme(localStorage.getItem('ittExecutiveTheme') || 'default');
+        }
 
         function formatNumber(value) {
             return new Intl.NumberFormat().format(value || 0);
@@ -193,29 +341,15 @@
             (insights.env_matrix || []).forEach(row => {
                 if (!row.source) return;
 
-                const source = scoreMap.get(row.source) || {
-                    name: row.source,
-                    outbound: 0,
-                    inbound: 0,
-                    external: 0
-                };
+                const source = scoreMap.get(row.source) || { name: row.source, outbound: 0, inbound: 0, external: 0 };
                 source.outbound += row.flow_count || 0;
-                if (row.destination === 'External/Unmanaged') {
-                    source.external += row.flow_count || 0;
-                }
+                if (row.destination === 'External/Unmanaged') source.external += row.flow_count || 0;
                 scoreMap.set(row.source, source);
 
                 if (!row.destination) return;
-                const destination = scoreMap.get(row.destination) || {
-                    name: row.destination,
-                    outbound: 0,
-                    inbound: 0,
-                    external: 0
-                };
+                const destination = scoreMap.get(row.destination) || { name: row.destination, outbound: 0, inbound: 0, external: 0 };
                 destination.inbound += row.flow_count || 0;
-                if (row.source === 'External/Unmanaged') {
-                    destination.external += row.flow_count || 0;
-                }
+                if (row.source === 'External/Unmanaged') destination.external += row.flow_count || 0;
                 scoreMap.set(row.destination, destination);
             });
 
@@ -241,21 +375,18 @@
                     body: `${formatNumber(crossTalk[0].flow_count)} flows, representing ${percentage(crossTalk[0].flow_count, totalFlows)} of all blocked traffic in the current dataset.`
                 });
             }
-
             if (risky[0]) {
                 findings.push({
                     title: `${risky[0].name} is the top risky blocked service`,
                     body: `${formatNumber(risky[0].flow_count)} flows across ${formatNumber(risky[0].unique_connections)} unique connections.`
                 });
             }
-
             if (topCategory) {
                 findings.push({
                     title: `${topCategory.name} is the dominant traffic boundary pattern`,
                     body: `${formatNumber(topCategory.flow_count)} flows across ${formatNumber(topCategory.unique_connections)} unique connections.`
                 });
             }
-
             if (topExternal) {
                 findings.push({
                     title: `${topExternal.name} is the leading external or unmanaged destination`,
@@ -271,13 +402,13 @@
             container.innerHTML = '';
             findings.forEach((finding, index) => {
                 const card = document.createElement('div');
-                card.className = 'rounded-2xl border border-stone-800 bg-stone-950/70 p-5';
+                card.className = 'panel-soft rounded-2xl p-5';
                 card.innerHTML = `
                     <div class="mb-3 flex items-center gap-3">
-                        <div class="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-500/15 text-sm font-bold text-emerald-300">0${index + 1}</div>
-                        <div class="text-lg font-semibold text-white">${finding.title}</div>
+                        <div class="finding-index flex h-9 w-9 items-center justify-center rounded-full text-sm font-bold">0${index + 1}</div>
+                        <div class="headline text-lg font-semibold">${finding.title}</div>
                     </div>
-                    <p class="text-sm leading-6 text-stone-400">${finding.body}</p>
+                    <p class="muted text-sm leading-6">${finding.body}</p>
                 `;
                 container.appendChild(card);
             });
@@ -286,7 +417,7 @@
         function renderRiskyServices(rows, totalFlows) {
             const container = document.getElementById('riskyServiceChart');
             if (!rows.length) {
-                container.innerHTML = '<div class="rounded-2xl bg-stone-950/70 px-4 py-4 text-sm text-stone-500">No risky service filters are represented in the loaded dataset.</div>';
+                container.innerHTML = '<div class="panel-soft rounded-2xl px-4 py-4 text-sm muted">No risky service filters are represented in the loaded dataset.</div>';
                 return;
             }
 
@@ -297,13 +428,13 @@
                 item.className = 'space-y-2';
                 item.innerHTML = `
                     <div class="flex items-center justify-between text-sm">
-                        <div class="font-semibold text-stone-100">${row.name}</div>
-                        <div class="text-stone-400">${formatNumber(row.flow_count)} flows</div>
+                        <div class="font-semibold headline">${row.name}</div>
+                        <div class="muted">${formatNumber(row.flow_count)} flows</div>
                     </div>
-                    <div class="h-3 rounded-full bg-stone-800">
-                        <div class="h-3 rounded-full bg-gradient-to-r from-rose-500 via-amber-400 to-emerald-400" style="width:${Math.min(width, 100).toFixed(1)}%"></div>
+                    <div class="bar-track">
+                        <div class="bar-fill" style="width:${Math.min(width, 100).toFixed(1)}%"></div>
                     </div>
-                    <div class="text-xs text-stone-500">${formatNumber(row.unique_connections)} unique connections</div>
+                    <div class="muted text-xs">${formatNumber(row.unique_connections)} unique connections</div>
                 `;
                 container.appendChild(item);
             });
@@ -314,16 +445,16 @@
             container.innerHTML = '';
             rows.forEach(row => {
                 const item = document.createElement('div');
-                item.className = 'rounded-2xl border border-stone-800 bg-stone-950/70 p-4';
+                item.className = 'panel-soft rounded-2xl p-4';
                 item.innerHTML = `
                     <div class="flex items-start justify-between gap-4">
                         <div>
-                            <div class="text-base font-semibold text-white">${row.source} -> ${row.destination}</div>
-                            <div class="mt-1 text-sm text-stone-400">${formatNumber(row.unique_connections)} unique connections</div>
+                            <div class="headline text-base font-semibold">${row.source} -> ${row.destination}</div>
+                            <div class="muted mt-1 text-sm">${formatNumber(row.unique_connections)} unique connections</div>
                         </div>
                         <div class="text-right">
-                            <div class="text-xl font-extrabold text-fuchsia-300">${formatNumber(row.flow_count)}</div>
-                            <div class="text-xs uppercase tracking-[0.25em] text-stone-500">${percentage(row.flow_count, totalFlows)}</div>
+                            <div class="metric-tertiary text-xl font-extrabold">${formatNumber(row.flow_count)}</div>
+                            <div class="muted text-xs uppercase tracking-[0.25em]">${percentage(row.flow_count, totalFlows)}</div>
                         </div>
                     </div>
                 `;
@@ -335,21 +466,21 @@
             const container = document.getElementById('externalSpotlight');
             const filtered = (rows || []).filter(row => row.name !== 'External/Unmanaged').slice(0, 6);
             if (!filtered.length) {
-                container.innerHTML = '<div class="rounded-2xl bg-stone-950/70 px-4 py-4 text-sm text-stone-500">No external or unmanaged destination concentration is present in the loaded dataset.</div>';
+                container.innerHTML = '<div class="panel-soft rounded-2xl px-4 py-4 text-sm muted">No external or unmanaged destination concentration is present in the loaded dataset.</div>';
                 return;
             }
 
             container.innerHTML = '';
             filtered.forEach(row => {
                 const item = document.createElement('div');
-                item.className = 'rounded-2xl border border-stone-800 bg-stone-950/70 p-4';
+                item.className = 'panel-soft rounded-2xl p-4';
                 item.innerHTML = `
                     <div class="flex items-start justify-between gap-4">
                         <div>
-                            <div class="text-base font-semibold text-white">${row.name}</div>
-                            <div class="mt-1 text-sm text-stone-400">${formatNumber(row.unique_connections)} unique connections</div>
+                            <div class="headline text-base font-semibold">${row.name}</div>
+                            <div class="muted mt-1 text-sm">${formatNumber(row.unique_connections)} unique connections</div>
                         </div>
-                        <div class="text-right text-xl font-extrabold text-amber-300">${formatNumber(row.flow_count)}</div>
+                        <div class="metric-warning text-right text-xl font-extrabold">${formatNumber(row.flow_count)}</div>
                     </div>
                 `;
                 container.appendChild(item);
@@ -361,24 +492,30 @@
             container.innerHTML = '';
             rows.forEach(row => {
                 const card = document.createElement('div');
-                card.className = 'rounded-2xl border border-stone-800 bg-stone-950/70 p-5';
+                card.className = 'panel-soft rounded-2xl p-5';
                 card.innerHTML = `
                     <div class="flex items-center justify-between gap-4">
-                        <div class="text-lg font-semibold text-white">${row.name}</div>
-                        <div class="text-sm font-bold text-emerald-300">${percentage(row.total, totalFlows)}</div>
+                        <div class="headline text-lg font-semibold">${row.name}</div>
+                        <div class="metric-accent text-sm font-bold">${percentage(row.total, totalFlows)}</div>
                     </div>
-                    <div class="mt-4 grid gap-3 text-sm text-stone-300">
-                        <div class="flex items-center justify-between rounded-xl bg-stone-900 px-3 py-2">
-                            <span>Outbound blocked flows</span>
-                            <span class="font-semibold text-white">${formatNumber(row.outbound)}</span>
+                    <div class="mt-4 grid gap-3 text-sm">
+                        <div class="rounded-xl px-3 py-2 panel">
+                            <div class="flex items-center justify-between">
+                                <span class="muted">Outbound blocked flows</span>
+                                <span class="headline font-semibold">${formatNumber(row.outbound)}</span>
+                            </div>
                         </div>
-                        <div class="flex items-center justify-between rounded-xl bg-stone-900 px-3 py-2">
-                            <span>Inbound blocked flows</span>
-                            <span class="font-semibold text-white">${formatNumber(row.inbound)}</span>
+                        <div class="rounded-xl px-3 py-2 panel">
+                            <div class="flex items-center justify-between">
+                                <span class="muted">Inbound blocked flows</span>
+                                <span class="headline font-semibold">${formatNumber(row.inbound)}</span>
+                            </div>
                         </div>
-                        <div class="flex items-center justify-between rounded-xl bg-stone-900 px-3 py-2">
-                            <span>External / unmanaged touchpoints</span>
-                            <span class="font-semibold text-amber-300">${formatNumber(row.external)}</span>
+                        <div class="rounded-xl px-3 py-2 panel">
+                            <div class="flex items-center justify-between">
+                                <span class="muted">External / unmanaged touchpoints</span>
+                                <span class="metric-warning font-semibold">${formatNumber(row.external)}</span>
+                            </div>
                         </div>
                     </div>
                 `;
@@ -434,7 +571,10 @@
             }
         }
 
-        window.onload = loadExecutiveSummary;
+        window.onload = () => {
+            loadSavedTheme();
+            loadExecutiveSummary();
+        };
     </script>
 </body>
 </html>
