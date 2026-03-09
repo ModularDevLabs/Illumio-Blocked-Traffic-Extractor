@@ -249,41 +249,55 @@ func handleDiscovery(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	client := illumio.NewClient(cfg.PCEURL, cfg.OrgID, cfg.APIKey, cfg.APISecret)
+	addLog("Discovery: loading labels...")
 	labels, err := client.GetLabels(ctx)
 	if err != nil {
 		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
 		return
 	}
+	addLog(fmt.Sprintf("Discovery: loaded %d labels.", len(labels)))
+	addLog("Discovery: loading services...")
 	services, err := client.GetServices(ctx)
 	if err != nil {
 		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
 		return
 	}
+	addLog(fmt.Sprintf("Discovery: loaded %d services.", len(services)))
+	addLog("Discovery: loading IP lists...")
 	ipLists, err := client.GetIPLists(ctx)
 	if err != nil {
 		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
 		return
 	}
+	addLog(fmt.Sprintf("Discovery: loaded %d IP lists.", len(ipLists)))
+	addLog("Discovery: loading label groups...")
 	labelGroups, err := client.GetLabelGroups(ctx)
 	if err != nil {
 		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
 		return
 	}
+	addLog(fmt.Sprintf("Discovery: loaded %d label groups.", len(labelGroups)))
+	addLog("Discovery: loading user groups...")
 	userGroups, err := client.GetUserGroups(ctx)
 	if err != nil {
 		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
 		return
 	}
+	addLog(fmt.Sprintf("Discovery: loaded %d user groups.", len(userGroups)))
+	addLog("Discovery: loading virtual services...")
 	vServices, err := client.GetVirtualServices(ctx)
 	if err != nil {
 		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
 		return
 	}
+	addLog(fmt.Sprintf("Discovery: loaded %d virtual services.", len(vServices)))
+	addLog("Discovery: loading virtual servers...")
 	vServers, err := client.GetVirtualServers(ctx)
 	if err != nil {
 		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
 		return
 	}
+	addLog(fmt.Sprintf("Discovery: loaded %d virtual servers.", len(vServers)))
 
 	labelNames := []string{}
 	for _, l := range labels {
