@@ -43,7 +43,7 @@ To provide a stable, cross-platform standalone tool that extracts a user-selecte
 - **In-Memory Analytics:** After a successful fetch, the backend derives analytics state from the aggregated flow set.
 - **Views:** Port/protocol summary, environment cross-talk, app-to-app matrix, heatmaps, top talkers, external/unmanaged summaries, and a separate executive-summary page.
 - **Presentation Themes:** The application supports shared dark and Illumio-inspired dark/light palettes without changing the underlying analytics dataset.
-- **CSV Re-Import:** Previously generated CSV files from this tool can be uploaded to rebuild the analytics dashboard without rerunning the query.
+- **CSV Re-Import:** Previously generated CSV files from this tool can be uploaded to rebuild the analytics dashboard without rerunning the query, and the summary API disables response caching so imported analytics are shown immediately.
 
 ## 4. CSV Schema
 The CSV is dynamically structured based on the PCE's label keys:
