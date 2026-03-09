@@ -114,6 +114,15 @@
         .themed-muted {
             color: var(--muted) !important;
         }
+        #appShell button[class*="bg-blue-"],
+        #appShell button[class*="bg-red-"],
+        #appShell button[class*="bg-green-"],
+        #appShell button[class*="bg-indigo-"],
+        #appShell button[class*="bg-amber-950"],
+        #appShell button[class*="bg-emerald-600"],
+        #appShell button[class*="bg-emerald-500"] {
+            color: #ffffff !important;
+        }
         #appShell [class*="bg-gray-700"], #appShell [class*="bg-gray-800"], #appShell [class*="bg-gray-900"], #appShell [class*="bg-black"] {
             background: var(--panel) !important;
         }
@@ -127,6 +136,17 @@
         #appShell #discoverBtn { background: var(--accent) !important; border-color: color-mix(in srgb, var(--accent-strong) 80%, black) !important; }
         #appShell #testBtn, #appShell .theme-button + button, #appShell button[class*="bg-gray-600"] { background: var(--panel) !important; color: var(--text) !important; border-color: var(--border) !important; }
         #appShell #cancelBtn, #appShell button[class*="bg-red-600"] { background: var(--danger) !important; }
+        body[data-theme="illumio-light"] #appShell [class*="text-blue-300"],
+        body[data-theme="illumio-light"] #appShell [class*="text-green-300"],
+        body[data-theme="illumio-light"] #appShell [class*="text-red-400"],
+        body[data-theme="illumio-light"] #appShell [class*="text-amber-300"] {
+            color: var(--secondary) !important;
+        }
+        body[data-theme="illumio-light"] #appShell [class*="text-gray-300"],
+        body[data-theme="illumio-light"] #appShell [class*="text-gray-400"],
+        body[data-theme="illumio-light"] #appShell [class*="text-gray-500"] {
+            color: var(--muted) !important;
+        }
         .autocomplete-items {
             position: absolute;
             border: 1px solid var(--field-border);
