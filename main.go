@@ -5,6 +5,7 @@ import (
 	"embed"
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -413,13 +414,17 @@ func handleDiscovery(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	const discoveryTimeout = 15 * time.Minute
+	ctx, cancel := context.WithTimeout(context.Background(), discoveryTimeout)
 	defer cancel()
 
 	client := illumio.NewClient(cfg.PCEURL, cfg.OrgID, cfg.APIKey, cfg.APISecret)
 	addLog("Discovery: starting parallel collection load (up to 3 collection jobs at a time)...")
 	discoveryData, err := fetchDiscoveryData(ctx, client, "Discovery:")
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			err = fmt.Errorf("discovery timed out after %s while loading large policy collections; no new discovery cache was saved", discoveryTimeout)
+		}
 		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
 		return
 	}
@@ -529,16 +534,16 @@ type Config struct {
 func handleTest(w http.ResponseWriter, r *http.Request) {
 	var cfg Config
 	json.NewDecoder(r.Body).Decode(&cfg)
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 
 	client := illumio.NewClient(cfg.PCEURL, cfg.OrgID, cfg.APIKey, cfg.APISecret)
-	labels, err := client.GetLabels(ctx)
+	err := client.TestConnection(ctx)
 	if err != nil {
 		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
 		return
 	}
-	json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "labelCount": len(labels)})
+	json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
 }
 
 func handleStatus(w http.ResponseWriter, r *http.Request) {

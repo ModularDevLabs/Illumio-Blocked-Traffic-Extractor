@@ -246,6 +246,23 @@ func (c *Client) GetVirtualServers(ctx context.Context) ([]VirtualServer, error)
 	return res, err
 }
 
+func (c *Client) TestConnection(ctx context.Context) error {
+	data, code, err := c.request(ctx, "GET", "labels?max_results=1", nil)
+	if err != nil {
+		return err
+	}
+	if code != http.StatusOK {
+		return fmt.Errorf("PCE returned %d", code)
+	}
+
+	var labels []Label
+	if err := json.Unmarshal(data, &labels); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (c *Client) FetchDayOfTraffic(ctx context.Context, req AsyncQueryRequest, logFn func(string)) ([]TrafficFlow, error) {
 	req.MaxResults = 200000
 	req.PolicyDecisions = []string{"blocked"}

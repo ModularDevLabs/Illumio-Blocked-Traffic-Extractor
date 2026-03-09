@@ -388,6 +388,17 @@
         let pceVServices = [];
         let pceVServers = [];
 
+        function clearDiscoveryData() {
+            pceLabels = [];
+            pceServices = [];
+            pceIPLists = [];
+            pceLabelGroups = [];
+            pceUserGroups = [];
+            pceVServices = [];
+            pceVServers = [];
+            setupAutocomplete();
+        }
+
         function applyTheme(theme) {
             document.body.dataset.theme = theme;
             localStorage.setItem('ittTheme', theme);
@@ -438,10 +449,12 @@
                     log(`<span class="text-indigo-400 font-bold">Discovery complete! Loaded ${pceLabels.length} Labels, ${pceLabelGroups.length} Label Groups, ${pceIPLists.length} IP Lists, ${pceUserGroups.length} User Groups, ${pceVServices.length} Virtual Services, and ${pceVServers.length} Virtual Servers.</span>`);
                     setupAutocomplete();
                 } else {
+                    clearDiscoveryData();
                     log(`<span class="text-red-400">Discovery failed: ${data.error}</span>`);
                 }
             } catch (e) {
                 await flushBackendLogs();
+                clearDiscoveryData();
                 log(`<span class="text-red-400">Error: ${e.message}</span>`);
             }
             stopDiscoveryLogPolling();
@@ -645,7 +658,7 @@
             try {
                 const res = await fetch('/api/test', { method: 'POST', body: JSON.stringify(getConfig()) });
                 const data = await res.json();
-                if (data.success) log(`<span class="text-green-400 font-bold underline italic">Success! Found ${data.labelCount} labels.</span>`);
+                if (data.success) log(`<span class="text-green-400 font-bold underline italic">Success! Connection authenticated.</span>`);
                 else log(`<span class="text-red-400">Error: ${data.error}</span>`);
             } catch (e) { log(`<span class="text-red-400">Fatal: ${e.message}</span>`); }
         }

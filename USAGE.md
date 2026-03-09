@@ -38,11 +38,13 @@ Discovery notes:
 -   **Load Policy Objects from PCE** now uses Illumio's asynchronous collection workflow so it can load full collections from larger PCEs instead of stopping at the first 500 objects.
 -   Discovery now runs up to 3 collection jobs in parallel to reduce wait time on larger PCEs.
 -   On large environments, discovery may still take longer because the PCE prepares full collection results before the UI autocomplete cache is populated.
+-   Large-PCE discovery is allowed up to 15 minutes before timing out. If it does time out, no new discovery cache is saved.
 -   The extractor reuses the most recently loaded discovery cache for the same PCE credentials so a fetch does not need to reload the full object inventory again.
 -   Discovery progress is shown in the main-page log window so you can see each object type load as it completes.
 
 ## 4. Running an Extraction
 1.  **Select/Enter Credentials:** Ensure the PCE details are correct.
+    -   **Test Connection:** Uses a lightweight authenticated API check instead of loading the full label inventory, so it remains responsive on larger PCEs.
 2.  **Define Filters:**
     -   **Sources/Destinations:** Enter label names (e.g., `App: DB`) or IP addresses. Separate multiple items with commas.
     -   **Services:** Enter specific service names from the PCE (e.g., `SSH, MySQL`) or explicit protocol/port filters (e.g., `TCP:445, UDP:5355`). Leave empty to pull all services.
