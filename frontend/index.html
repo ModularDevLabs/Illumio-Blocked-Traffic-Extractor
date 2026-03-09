@@ -114,6 +114,16 @@
         .themed-muted {
             color: var(--muted) !important;
         }
+        .risky-button {
+            border-color: var(--field-border) !important;
+            background: color-mix(in srgb, var(--accent) 16%, var(--panel)) !important;
+            color: #ffffff !important;
+        }
+        body[data-theme="illumio-light"] .risky-button {
+            background: #ff5500 !important;
+            color: #ffffff !important;
+            border-color: #f97607 !important;
+        }
         #appShell button[class*="bg-blue-"],
         #appShell button[class*="bg-red-"],
         #appShell button[class*="bg-green-"],
@@ -244,7 +254,7 @@
             <div class="col-span-2 relative">
                 <div class="mb-2 flex items-center justify-between gap-3">
                     <label class="block text-sm font-semibold text-green-300 uppercase tracking-tighter">Services (Names or Proto:Port - empty for all)</label>
-                    <button type="button" onclick="appendRiskyServices()" class="shrink-0 rounded border border-amber-500 bg-amber-950/60 px-3 py-1 text-xs font-bold uppercase tracking-wide text-amber-300 hover:bg-amber-900/70">
+                    <button type="button" onclick="appendRiskyServices()" class="risky-button shrink-0 rounded border px-3 py-1 text-xs font-bold uppercase tracking-wide">
                         Add Risky Services
                     </button>
                 </div>
