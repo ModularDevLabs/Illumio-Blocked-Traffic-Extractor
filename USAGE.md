@@ -34,6 +34,10 @@ The tool allows you to save credentials for multiple Illumio environments.
 -   **To Load a Profile:** Select the desired PCE from the dropdown menu.
 -   **To Delete a Profile:** Select the profile from the dropdown and click **Delete**.
 
+Discovery notes:
+-   **Load Policy Objects from PCE** now uses Illumio's asynchronous collection workflow so it can load full collections from larger PCEs instead of stopping at the first 500 objects.
+-   On large environments, discovery may take longer because the PCE prepares the full collection result before the UI autocomplete cache is populated.
+
 ## 4. Running an Extraction
 1.  **Select/Enter Credentials:** Ensure the PCE details are correct.
 2.  **Define Filters:**

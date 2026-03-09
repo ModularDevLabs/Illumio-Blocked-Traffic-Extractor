@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -34,7 +35,20 @@ func NewClient(pceUrl, orgId, apiKey, apiSecret string) *Client {
 	}
 }
 
-func (c *Client) request(ctx context.Context, method, path string, body interface{}) ([]byte, int, error) {
+func (c *Client) buildURL(path string) string {
+	switch {
+	case strings.HasPrefix(path, "http://"), strings.HasPrefix(path, "https://"):
+		return path
+	case strings.HasPrefix(path, "/api/"):
+		return fmt.Sprintf("%s%s", c.PCEURL, path)
+	case strings.HasPrefix(path, "/orgs/"):
+		return fmt.Sprintf("%s/api/v2%s", c.PCEURL, path)
+	default:
+		return fmt.Sprintf("%s/api/v2/orgs/%s/%s", c.PCEURL, c.OrgID, path)
+	}
+}
+
+func (c *Client) requestWithHeaders(ctx context.Context, method, path string, body interface{}, extraHeaders map[string]string) ([]byte, int, http.Header, error) {
 	// Global Rate Limit Cool-down
 	c.Mu.Lock()
 	cooldownUntil := c.CooldownUntil
@@ -47,33 +61,36 @@ func (c *Client) request(ctx context.Context, method, path string, body interfac
 			select {
 			case <-timer.C:
 			case <-ctx.Done():
-				return nil, 0, ctx.Err()
+				return nil, 0, nil, ctx.Err()
 			}
 		}
 	}
 
-	url := fmt.Sprintf("%s/api/v2/orgs/%s/%s", c.PCEURL, c.OrgID, path)
+	url := c.buildURL(path)
 	var bodyReader io.Reader
 	if body != nil {
 		jsonBody, err := json.Marshal(body)
 		if err != nil {
-			return nil, 0, err
+			return nil, 0, nil, err
 		}
 		bodyReader = bytes.NewBuffer(jsonBody)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, method, url, bodyReader)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, nil, err
 	}
 	req.SetBasicAuth(c.APIKey, c.APISecret)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("x-public-api-version", "2")
+	for key, value := range extraHeaders {
+		req.Header.Set(key, value)
+	}
 
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, nil, err
 	}
 	defer resp.Body.Close()
 
@@ -83,10 +100,85 @@ func (c *Client) request(ctx context.Context, method, path string, body interfac
 		c.Mu.Lock()
 		c.CooldownUntil = time.Now().Add(60 * time.Second)
 		c.Mu.Unlock()
-		return data, 429, fmt.Errorf("rate limit hit")
+		return data, 429, resp.Header.Clone(), fmt.Errorf("rate limit hit")
 	}
 
-	return data, resp.StatusCode, nil
+	return data, resp.StatusCode, resp.Header.Clone(), nil
+}
+
+func (c *Client) request(ctx context.Context, method, path string, body interface{}) ([]byte, int, error) {
+	data, code, _, err := c.requestWithHeaders(ctx, method, path, body, nil)
+	return data, code, err
+}
+
+func retryAfterDelay(headers http.Header) time.Duration {
+	if headers == nil {
+		return 5 * time.Second
+	}
+	value := strings.TrimSpace(headers.Get("Retry-After"))
+	if value == "" {
+		return 5 * time.Second
+	}
+	seconds, err := strconv.Atoi(value)
+	if err != nil || seconds < 1 {
+		return 5 * time.Second
+	}
+	return time.Duration(seconds) * time.Second
+}
+
+func (c *Client) getCollection(ctx context.Context, path string, target interface{}) error {
+	data, code, headers, err := c.requestWithHeaders(ctx, "GET", path, nil, map[string]string{"Prefer": "respond-async"})
+	if err != nil && code != http.StatusAccepted {
+		return err
+	}
+
+	switch code {
+	case http.StatusOK:
+		return json.Unmarshal(data, target)
+	case http.StatusAccepted:
+		jobPath := headers.Get("Location")
+		if jobPath == "" {
+			return fmt.Errorf("async collection request missing job location")
+		}
+
+		delay := retryAfterDelay(headers)
+		for {
+			jobData, jobCode, jobHeaders, jobErr := c.requestWithHeaders(ctx, "GET", jobPath, nil, nil)
+			if jobErr == nil && jobCode == http.StatusOK {
+				var job AsyncJobStatus
+				if err := json.Unmarshal(jobData, &job); err != nil {
+					return err
+				}
+
+				switch strings.ToLower(job.Status) {
+				case "done":
+					if job.Result.Href == "" {
+						return fmt.Errorf("async collection completed without result href")
+					}
+					resultData, resultCode, _, resultErr := c.requestWithHeaders(ctx, "GET", job.Result.Href, nil, nil)
+					if resultErr != nil {
+						return resultErr
+					}
+					if resultCode != http.StatusOK {
+						return fmt.Errorf("async collection download failed (HTTP %d)", resultCode)
+					}
+					_, _, _, _ = c.requestWithHeaders(context.Background(), "DELETE", jobPath, nil, nil)
+					return json.Unmarshal(resultData, target)
+				case "failed":
+					return fmt.Errorf("async collection job failed")
+				}
+			}
+
+			delay = retryAfterDelay(jobHeaders)
+			select {
+			case <-time.After(delay):
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+	default:
+		return fmt.Errorf("PCE returned %d", code)
+	}
 }
 
 func parseFlowLabels(raw interface{}) []FlowLabel {
@@ -113,93 +205,44 @@ func parseFlowLabels(raw interface{}) []FlowLabel {
 }
 
 func (c *Client) GetLabels(ctx context.Context) ([]Label, error) {
-	data, code, err := c.request(ctx, "GET", "labels", nil)
-	if err != nil {
-		return nil, err
-	}
-	if code != 200 {
-		return nil, fmt.Errorf("PCE returned %d", code)
-	}
 	var res []Label
-	err = json.Unmarshal(data, &res)
+	err := c.getCollection(ctx, "labels", &res)
 	return res, err
 }
 
 func (c *Client) GetServices(ctx context.Context) ([]Service, error) {
-	data, code, err := c.request(ctx, "GET", "sec_policy/active/services", nil)
-	if err != nil {
-		return nil, err
-	}
-	if code != 200 {
-		return nil, fmt.Errorf("PCE returned %d", code)
-	}
 	var res []Service
-	err = json.Unmarshal(data, &res)
+	err := c.getCollection(ctx, "sec_policy/active/services", &res)
 	return res, err
 }
 
 func (c *Client) GetIPLists(ctx context.Context) ([]IPList, error) {
-	data, code, err := c.request(ctx, "GET", "sec_policy/active/ip_lists", nil)
-	if err != nil {
-		return nil, err
-	}
-	if code != 200 {
-		return nil, fmt.Errorf("PCE returned %d", code)
-	}
 	var res []IPList
-	err = json.Unmarshal(data, &res)
+	err := c.getCollection(ctx, "sec_policy/active/ip_lists", &res)
 	return res, err
 }
 
 func (c *Client) GetLabelGroups(ctx context.Context) ([]LabelGroup, error) {
-	data, code, err := c.request(ctx, "GET", "sec_policy/active/label_groups", nil)
-	if err != nil {
-		return nil, err
-	}
-	if code != 200 {
-		return nil, fmt.Errorf("PCE returned %d", code)
-	}
 	var res []LabelGroup
-	err = json.Unmarshal(data, &res)
+	err := c.getCollection(ctx, "sec_policy/active/label_groups", &res)
 	return res, err
 }
 
 func (c *Client) GetUserGroups(ctx context.Context) ([]UserGroup, error) {
-	data, code, err := c.request(ctx, "GET", "security_principals", nil)
-	if err != nil {
-		return nil, err
-	}
-	if code != 200 {
-		return nil, fmt.Errorf("PCE returned %d", code)
-	}
 	var res []UserGroup
-	err = json.Unmarshal(data, &res)
+	err := c.getCollection(ctx, "security_principals", &res)
 	return res, err
 }
 
 func (c *Client) GetVirtualServices(ctx context.Context) ([]VirtualService, error) {
-	data, code, err := c.request(ctx, "GET", "sec_policy/active/virtual_services", nil)
-	if err != nil {
-		return nil, err
-	}
-	if code != 200 {
-		return nil, fmt.Errorf("PCE returned %d", code)
-	}
 	var res []VirtualService
-	err = json.Unmarshal(data, &res)
+	err := c.getCollection(ctx, "sec_policy/active/virtual_services", &res)
 	return res, err
 }
 
 func (c *Client) GetVirtualServers(ctx context.Context) ([]VirtualServer, error) {
-	data, code, err := c.request(ctx, "GET", "sec_policy/active/virtual_servers", nil)
-	if err != nil {
-		return nil, err
-	}
-	if code != 200 {
-		return nil, fmt.Errorf("PCE returned %d", code)
-	}
 	var res []VirtualServer
-	err = json.Unmarshal(data, &res)
+	err := c.getCollection(ctx, "sec_policy/active/virtual_servers", &res)
 	return res, err
 }
 

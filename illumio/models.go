@@ -110,3 +110,13 @@ type AsyncQueryStatus struct {
 	Href   string `json:"href"`
 	Status string `json:"status"`
 }
+
+type AsyncJobResult struct {
+	Href string `json:"href"`
+}
+
+type AsyncJobStatus struct {
+	Href   string         `json:"href"`
+	Status string         `json:"status"`
+	Result AsyncJobResult `json:"result"`
+}

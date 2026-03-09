@@ -15,6 +15,7 @@ To provide a stable, cross-platform standalone tool that extracts a user-selecte
 ### 3.1. Policy Object Discovery
 - **Endpoint:** `/api/discovery`
 - **Scope:** Loads Labels, Label Groups, IP Lists, User Groups, Virtual Services, and Virtual Servers.
+- **Collection Strategy:** Uses Illumio asynchronous GET collection jobs for discovery collections so larger PCEs are not truncated at the default 500-object response limit.
 - **Automation:** Populates a live-search/autocomplete cache in the browser memory to prevent user typos and ensure query validity.
 
 ### 3.2. Traffic Extraction Engine
