@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -739,6 +740,97 @@ func buildExcludeRefs(raw string, labelMap, ipListMap, lgMap, ugMap, vsMap, vsvr
 	return refs
 }
 
+func parseProtocolNumber(raw string) (int, bool) {
+	switch strings.ToUpper(strings.TrimSpace(raw)) {
+	case "TCP":
+		return 6, true
+	case "UDP":
+		return 17, true
+	case "ICMP":
+		return 1, true
+	case "IGMP":
+		return 2, true
+	case "GRE":
+		return 47, true
+	}
+
+	value, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || value < 0 || value > 255 {
+		return 0, false
+	}
+	return value, true
+}
+
+func parseDirectService(entry string) (illumio.PortProtoService, bool) {
+	parts := strings.SplitN(entry, ":", 2)
+	if len(parts) != 2 {
+		return illumio.PortProtoService{}, false
+	}
+
+	proto, ok := parseProtocolNumber(parts[0])
+	if !ok {
+		return illumio.PortProtoService{}, false
+	}
+
+	portSpec := strings.TrimSpace(parts[1])
+	if portSpec == "" {
+		return illumio.PortProtoService{}, false
+	}
+
+	service := illumio.PortProtoService{Proto: proto}
+	if strings.Contains(portSpec, "-") {
+		rangeParts := strings.SplitN(portSpec, "-", 2)
+		if len(rangeParts) != 2 {
+			return illumio.PortProtoService{}, false
+		}
+
+		startPort, err := strconv.Atoi(strings.TrimSpace(rangeParts[0]))
+		if err != nil || startPort < 1 || startPort > 65535 {
+			return illumio.PortProtoService{}, false
+		}
+
+		endPort, err := strconv.Atoi(strings.TrimSpace(rangeParts[1]))
+		if err != nil || endPort < startPort || endPort > 65535 {
+			return illumio.PortProtoService{}, false
+		}
+
+		service.Port = startPort
+		service.ToPort = endPort
+		return service, true
+	}
+
+	port, err := strconv.Atoi(portSpec)
+	if err != nil || port < 1 || port > 65535 {
+		return illumio.PortProtoService{}, false
+	}
+
+	service.Port = port
+	return service, true
+}
+
+func buildServiceIncludeEntries(raw string, serviceMap map[string]string) ([]interface{}, []string) {
+	includes := make([]interface{}, 0)
+	warnings := make([]string, 0)
+
+	for _, entry := range strings.Split(raw, ",") {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		if href, ok := serviceMap[entry]; ok {
+			includes = append(includes, illumio.ServiceRef{Href: href})
+			continue
+		}
+		if directService, ok := parseDirectService(entry); ok {
+			includes = append(includes, directService)
+			continue
+		}
+		warnings = append(warnings, entry)
+	}
+
+	return includes, warnings
+}
+
 func uniqueJoinedLabelValues(labels []illumio.FlowLabel, key string) string {
 	seen := make(map[string]bool)
 	values := []string{}
@@ -1026,14 +1118,10 @@ func runExtraction(ctx context.Context, cfg Config) {
 	req.Destinations.Exclude = buildExcludeRefs(cfg.ExcludeDst, labelMap, ipListMap, lgMap, ugMap, vsMap, vsvrMap)
 
 	if cfg.Services != "" {
-		for _, name := range strings.Split(cfg.Services, ",") {
-			name = strings.TrimSpace(name)
-			if name == "" {
-				continue
-			}
-			if href, ok := serviceMap[name]; ok {
-				req.Services.Include = append(req.Services.Include, illumio.ServiceRef{Href: href})
-			}
+		includeEntries, warnings := buildServiceIncludeEntries(cfg.Services, serviceMap)
+		req.Services.Include = append(req.Services.Include, includeEntries...)
+		for _, entry := range warnings {
+			addLog(fmt.Sprintf("Warning: skipped unknown service filter '%s'", entry))
 		}
 	}
 

@@ -81,6 +81,12 @@ type ServiceRef struct {
 	Href string `json:"href"`
 }
 
+type PortProtoService struct {
+	Port   int `json:"port,omitempty"`
+	ToPort int `json:"to_port,omitempty"`
+	Proto  int `json:"proto,omitempty"`
+}
+
 type IncludeExclude struct {
 	Include [][]LabelRef `json:"include"`
 	Exclude []LabelRef   `json:"exclude"`

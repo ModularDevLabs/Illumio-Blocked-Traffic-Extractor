@@ -4,3 +4,7 @@ IllumioTrafficTool_Linux
 IllumioTrafficTool_Windows.exe
 IllumioTrafficTool_MacOS_Intel
 IllumioTrafficTool_MacOS_AppleSilicon
+.DS_Store
+Thumbs.db
+*.log
+coverage.out

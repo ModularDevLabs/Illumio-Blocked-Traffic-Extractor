@@ -97,8 +97,14 @@
                 <input id="dst_labels" type="text" placeholder="Role: Web" class="w-full bg-gray-700 border border-gray-600 rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none autocomplete">
             </div>
             <div class="col-span-2 relative">
-                <label class="block text-sm font-semibold mb-2 text-green-300 uppercase tracking-tighter">Services (Service Names - empty for all)</label>
-                <input id="services" type="text" placeholder="MySQL, SSH" class="w-full bg-gray-700 border border-gray-600 rounded p-2 focus:ring-2 focus:ring-green-500 outline-none autocomplete-services">
+                <div class="mb-2 flex items-center justify-between gap-3">
+                    <label class="block text-sm font-semibold text-green-300 uppercase tracking-tighter">Services (Names or Proto:Port - empty for all)</label>
+                    <button type="button" onclick="appendRiskyServices()" class="shrink-0 rounded border border-amber-500 bg-amber-950/60 px-3 py-1 text-xs font-bold uppercase tracking-wide text-amber-300 hover:bg-amber-900/70">
+                        Add Risky Services
+                    </button>
+                </div>
+                <input id="services" type="text" placeholder="MySQL, SSH, TCP:3389, UDP:5355" class="w-full bg-gray-700 border border-gray-600 rounded p-2 focus:ring-2 focus:ring-green-500 outline-none autocomplete-services">
+                <p class="mt-2 text-xs text-gray-400">Service names from the PCE and explicit filters like <span class="font-semibold text-gray-300">TCP:445</span> are both supported.</p>
             </div>
             <div class="col-span-1 relative">
                 <label class="block text-sm font-semibold mb-2 text-red-400 uppercase tracking-tighter">Exclusions (Sources)</label>
@@ -162,6 +168,44 @@
     <script>
         let profiles = {};
         let pollingInterval = null;
+        const riskyServiceEntries = [
+            'TCP:80',
+            'UDP:5355',
+            'TCP:2049',
+            'UDP:2049',
+            'TCP:3389',
+            'UDP:3389',
+            'TCP:135',
+            'TCP:445',
+            'UDP:445',
+            'TCP:22',
+            'UDP:22',
+            'TCP:5985',
+            'TCP:5986',
+            'TCP:20',
+            'TCP:21',
+            'TCP:4444',
+            'UDP:4444',
+            'UDP:5353',
+            'UDP:137',
+            'UDP:138',
+            'TCP:137',
+            'TCP:139',
+            'TCP:110',
+            'TCP:1723',
+            'UDP:1723',
+            'UDP:1900',
+            'TCP:111',
+            'UDP:111',
+            'TCP:5938',
+            'UDP:5938',
+            'TCP:23',
+            'UDP:23',
+            'TCP:5900',
+            'UDP:5900',
+            'TCP:3702',
+            'UDP:3702'
+        ];
         let pceLabels = [];
         let pceServices = [];
         let pceIPLists = [];
@@ -327,6 +371,28 @@
             const nextType = input.type === 'password' ? 'text' : 'password';
             input.type = nextType;
             button.innerText = nextType === 'password' ? 'Show' : 'Hide';
+        }
+
+        function appendRiskyServices() {
+            const servicesInput = document.getElementById('services');
+            const existingEntries = servicesInput.value
+                .split(',')
+                .map((entry) => entry.trim())
+                .filter(Boolean);
+            const seen = new Set(existingEntries.map((entry) => entry.toLowerCase()));
+            let added = 0;
+
+            riskyServiceEntries.forEach((entry) => {
+                const key = entry.toLowerCase();
+                if (seen.has(key)) return;
+                seen.add(key);
+                existingEntries.push(entry);
+                added += 1;
+            });
+
+            servicesInput.value = existingEntries.join(', ');
+            log(`Added ${added} risky service filters.`);
+            servicesInput.focus();
         }
 
         async function testConnection() {
