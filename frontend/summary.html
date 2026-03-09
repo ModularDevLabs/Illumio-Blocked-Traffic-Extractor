@@ -122,7 +122,7 @@
 
         <div id="emptyState" class="hidden rounded-2xl border panel-soft p-8 text-center">
             <p class="text-lg font-semibold">No analytics are available yet.</p>
-            <p class="muted mt-2 text-sm">Run a fetch from the main page first. The latest successful run will appear here.</p>
+            <p class="muted mt-2 text-sm">Run a fetch from the main page or import a CSV above. The latest successful fetch or import will appear here.</p>
         </div>
 
         <div id="dashboard" class="hidden space-y-8">
@@ -505,7 +505,7 @@
             const fileLabel = document.getElementById('fileLabel');
             fileLabel.innerText = 'Loading latest results...';
             try {
-                const res = await fetch('/api/results/summary');
+                const res = await fetch(`/api/results/summary?ts=${Date.now()}`, { cache: 'no-store' });
                 const data = await res.json();
                 if (!data.summary || data.summary.length === 0) {
                     document.getElementById('emptyState').classList.remove('hidden');
@@ -538,6 +538,7 @@
             try {
                 const res = await fetch('/api/results/import-csv', {
                     method: 'POST',
+                    cache: 'no-store',
                     body: formData
                 });
                 const data = await res.json();

@@ -564,6 +564,10 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleSummary(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Expires", "0")
+
 	state.Mu.Lock()
 	defer state.Mu.Unlock()
 
@@ -743,6 +747,10 @@ func parseCSVAnalytics(reader io.Reader) ([]PortProtocolSummary, AnalyticsInsigh
 }
 
 func handleImportCSV(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Expires", "0")
+
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
 		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
 		return
