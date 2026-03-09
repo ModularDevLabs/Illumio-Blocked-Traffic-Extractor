@@ -149,6 +149,21 @@
             </a>
         </div>
 
+        <div class="mb-8 rounded-lg border border-gray-700 bg-gray-900/60 p-4">
+            <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                    <h2 class="text-sm font-bold uppercase tracking-wider text-gray-300">Upload Existing CSV</h2>
+                    <p class="mt-1 text-xs text-gray-500">Import a previously exported CSV from this tool and jump directly to the analytics dashboard.</p>
+                </div>
+                <div class="flex flex-col gap-3 md:flex-row md:items-center">
+                    <input id="mainCsvFile" type="file" accept=".csv,text/csv" class="text-sm text-gray-400 file:mr-4 file:rounded-lg file:border-0 file:bg-gray-800 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-gray-200 hover:file:bg-gray-700">
+                    <button type="button" onclick="uploadCSVAndOpenSummary()" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold hover:bg-emerald-500">
+                        Upload CSV
+                    </button>
+                </div>
+            </div>
+        </div>
+
         <!-- Progress -->
         <div id="progressArea" class="hidden">
             <div class="flex justify-between items-center mb-2">
@@ -393,6 +408,35 @@
             servicesInput.value = existingEntries.join(', ');
             log(`Added ${added} risky service filters.`);
             servicesInput.focus();
+        }
+
+        async function uploadCSVAndOpenSummary() {
+            const fileInput = document.getElementById('mainCsvFile');
+            const file = fileInput.files[0];
+            if (!file) {
+                alert('Please choose a CSV file first.');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            log(`Importing CSV '${file.name}' for analytics review...`);
+
+            try {
+                const res = await fetch('/api/results/import-csv', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await res.json();
+                if (!data.success) {
+                    log(`<span class="text-red-400">CSV import failed: ${data.error || 'Unknown error'}</span>`);
+                    return;
+                }
+                window.location.href = '/summary';
+            } catch (e) {
+                log(`<span class="text-red-400">CSV import failed: ${e.message}</span>`);
+            }
         }
 
         async function testConnection() {
