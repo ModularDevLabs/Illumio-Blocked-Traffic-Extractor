@@ -104,3 +104,20 @@ func TestBuildServiceIncludeEntries(t *testing.T) {
 		t.Fatalf("third include = %#v, want UDP:5355", got[2])
 	}
 }
+
+func TestParseSelectorRejectsUnknownNonIP(t *testing.T) {
+	t.Parallel()
+
+	_, ok := parseSelector("A-RXCONNECT", map[string]string{}, map[string]string{}, map[string]string{}, map[string]string{}, map[string]string{}, map[string]string{})
+	if ok {
+		t.Fatal("parseSelector should reject unknown non-IP tokens")
+	}
+
+	ref, ok := parseSelector("10.10.10.10", map[string]string{}, map[string]string{}, map[string]string{}, map[string]string{}, map[string]string{}, map[string]string{})
+	if !ok {
+		t.Fatal("parseSelector should accept valid IP addresses")
+	}
+	if ref.IPAddress != "10.10.10.10" {
+		t.Fatalf("parseSelector returned %#v, want IPAddress 10.10.10.10", ref)
+	}
+}

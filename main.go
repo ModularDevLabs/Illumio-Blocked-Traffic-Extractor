@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -655,6 +656,20 @@ func handleStart(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
 }
 
+func looksLikeIPAddress(value string) bool {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return false
+	}
+	if ip := net.ParseIP(value); ip != nil {
+		return true
+	}
+	if _, _, err := net.ParseCIDR(value); err == nil {
+		return true
+	}
+	return false
+}
+
 func parseSelector(token string, labelMap, ipListMap, lgMap, ugMap, vsMap, vsvrMap map[string]string) (illumio.LabelRef, bool) {
 	name := strings.TrimSpace(token)
 	if name == "" {
@@ -676,20 +691,27 @@ func parseSelector(token string, labelMap, ipListMap, lgMap, ugMap, vsMap, vsvrM
 	case vsvrMap[name] != "":
 		ref.VirtualServer = &illumio.Href{Href: vsvrMap[name]}
 	default:
+		if !looksLikeIPAddress(name) {
+			return illumio.LabelRef{}, false
+		}
 		ref.IPAddress = name
 	}
 
 	return ref, true
 }
 
-func buildIncludeGroups(raw string, labelMap, labelKeyMap, ipListMap, lgMap, ugMap, vsMap, vsvrMap map[string]string) [][]illumio.LabelRef {
+func buildIncludeGroups(raw string, labelMap, labelKeyMap, ipListMap, lgMap, ugMap, vsMap, vsvrMap map[string]string) ([][]illumio.LabelRef, []string) {
 	groupsByKey := make(map[string][]illumio.LabelRef)
 	ipGroup := []illumio.LabelRef{}
 	groupOrder := []string{}
+	warnings := []string{}
 
 	for _, token := range strings.Split(raw, ",") {
 		ref, ok := parseSelector(token, labelMap, ipListMap, lgMap, ugMap, vsMap, vsvrMap)
 		if !ok {
+			if trimmed := strings.TrimSpace(token); trimmed != "" {
+				warnings = append(warnings, trimmed)
+			}
 			continue
 		}
 
@@ -731,18 +753,21 @@ func buildIncludeGroups(raw string, labelMap, labelKeyMap, ipListMap, lgMap, ugM
 		groups = append(groups, ipGroup)
 	}
 
-	return groups
+	return groups, warnings
 }
 
-func buildExcludeRefs(raw string, labelMap, ipListMap, lgMap, ugMap, vsMap, vsvrMap map[string]string) []illumio.LabelRef {
+func buildExcludeRefs(raw string, labelMap, ipListMap, lgMap, ugMap, vsMap, vsvrMap map[string]string) ([]illumio.LabelRef, []string) {
 	refs := []illumio.LabelRef{}
+	warnings := []string{}
 	for _, token := range strings.Split(raw, ",") {
 		ref, ok := parseSelector(token, labelMap, ipListMap, lgMap, ugMap, vsMap, vsvrMap)
 		if ok {
 			refs = append(refs, ref)
+		} else if trimmed := strings.TrimSpace(token); trimmed != "" {
+			warnings = append(warnings, trimmed)
 		}
 	}
-	return refs
+	return refs, warnings
 }
 
 func parseProtocolNumber(raw string) (int, bool) {
@@ -1117,10 +1142,23 @@ func runExtraction(ctx context.Context, cfg Config) {
 		},
 	}
 
-	req.Sources.Include = buildIncludeGroups(cfg.SrcLabels, labelMap, labelKeyMap, ipListMap, lgMap, ugMap, vsMap, vsvrMap)
-	req.Destinations.Include = buildIncludeGroups(cfg.DstLabels, labelMap, labelKeyMap, ipListMap, lgMap, ugMap, vsMap, vsvrMap)
-	req.Sources.Exclude = buildExcludeRefs(cfg.ExcludeSrc, labelMap, ipListMap, lgMap, ugMap, vsMap, vsvrMap)
-	req.Destinations.Exclude = buildExcludeRefs(cfg.ExcludeDst, labelMap, ipListMap, lgMap, ugMap, vsMap, vsvrMap)
+	var selectorWarnings []string
+	req.Sources.Include, selectorWarnings = buildIncludeGroups(cfg.SrcLabels, labelMap, labelKeyMap, ipListMap, lgMap, ugMap, vsMap, vsvrMap)
+	for _, warning := range selectorWarnings {
+		addLog(fmt.Sprintf("Warning: skipped unknown source selector '%s'", warning))
+	}
+	req.Destinations.Include, selectorWarnings = buildIncludeGroups(cfg.DstLabels, labelMap, labelKeyMap, ipListMap, lgMap, ugMap, vsMap, vsvrMap)
+	for _, warning := range selectorWarnings {
+		addLog(fmt.Sprintf("Warning: skipped unknown destination selector '%s'", warning))
+	}
+	req.Sources.Exclude, selectorWarnings = buildExcludeRefs(cfg.ExcludeSrc, labelMap, ipListMap, lgMap, ugMap, vsMap, vsvrMap)
+	for _, warning := range selectorWarnings {
+		addLog(fmt.Sprintf("Warning: skipped unknown source exclusion '%s'", warning))
+	}
+	req.Destinations.Exclude, selectorWarnings = buildExcludeRefs(cfg.ExcludeDst, labelMap, ipListMap, lgMap, ugMap, vsMap, vsvrMap)
+	for _, warning := range selectorWarnings {
+		addLog(fmt.Sprintf("Warning: skipped unknown destination exclusion '%s'", warning))
+	}
 
 	if cfg.Services != "" {
 		includeEntries, warnings := buildServiceIncludeEntries(cfg.Services, serviceMap)
