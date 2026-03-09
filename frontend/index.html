@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Illumio Blocked Traffic Extractor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        .autocomplete-items {
+            position: absolute;
+            border: 1px solid #4b5563;
+            border-bottom: none;
+            border-top: none;
+            z-index: 99;
+            top: 100%;
+            left: 0;
+            right: 0;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .autocomplete-items div {
+            padding: 8px;
+            cursor: pointer;
+            background-color: #374151;
+            border-bottom: 1px solid #4b5563;
+        }
+        .autocomplete-items div:hover { background-color: #4b5563; }
+        .autocomplete-active { background-color: #2563eb !important; }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen p-8">
+    <div class="max-w-4xl mx-auto bg-gray-800 p-8 rounded-xl shadow-2xl border border-gray-700">
+        <div class="mb-8">
+            <h1 class="text-3xl font-bold text-blue-400 text-center uppercase tracking-widest">Illumio Blocked Traffic Extractor</h1>
+        </div>
+        
+        <!-- PCE Profiles -->
+        <div class="mb-8 p-4 bg-gray-700 rounded-lg border border-gray-600">
+            <h2 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4">PCE Profiles</h2>
+            <div class="flex space-x-4 mb-4">
+                <select id="profileSelect" onchange="loadSelectedProfile()" class="flex-1 bg-gray-800 border border-gray-600 rounded p-2 outline-none">
+                    <option value="">-- Select a Saved PCE --</option>
+                </select>
+                <button onclick="deleteProfile()" class="bg-red-600 hover:bg-red-700 px-4 py-2 rounded font-bold text-xs uppercase transition">Delete</button>
+            </div>
+            <div class="flex space-x-4">
+                <input id="profile_name" type="text" placeholder="New Profile Name" class="flex-1 bg-gray-800 border border-gray-600 rounded p-2 outline-none text-sm">
+                <button onclick="saveProfile()" class="bg-blue-600 hover:bg-blue-700 px-6 py-2 rounded font-bold text-xs uppercase transition">Save Current Config</button>
+            </div>
+        </div>
+
+        <!-- PCE Config -->
+        <div class="grid grid-cols-2 gap-6 mb-4">
+            <div class="col-span-1">
+                <label class="block text-xs font-bold text-gray-400 mb-1 italic uppercase">PCE URL</label>
+                <input id="pce_url" type="text" placeholder="https://pce.example.com:8443" autocomplete="off" spellcheck="false" class="w-full bg-gray-700 border border-gray-600 rounded p-2 outline-none">
+            </div>
+            <div class="col-span-1">
+                <label class="block text-xs font-bold text-gray-400 mb-1 italic uppercase">Org ID</label>
+                <input id="org_id" type="text" placeholder="1" autocomplete="off" class="w-full bg-gray-700 border border-gray-600 rounded p-2 outline-none">
+            </div>
+            <div class="col-span-1">
+                <label class="block text-xs font-bold text-gray-400 mb-1 italic uppercase">API Key</label>
+                <div class="flex gap-2">
+                    <input id="api_key" type="password" placeholder="api_xxxxxxxx" autocomplete="new-password" autocapitalize="none" spellcheck="false" data-lpignore="true" class="flex-1 bg-gray-700 border border-gray-600 rounded p-2 outline-none">
+                    <button type="button" onclick="toggleSecretField('api_key', this)" class="bg-gray-600 hover:bg-gray-500 border border-gray-500 rounded px-3 text-xs font-bold uppercase">Show</button>
+                </div>
+            </div>
+            <div class="col-span-1">
+                <label class="block text-xs font-bold text-gray-400 mb-1 italic uppercase">API Secret</label>
+                <div class="flex gap-2">
+                    <input id="api_secret" type="password" placeholder="xxxxxxxxxxxxxxxx" autocomplete="new-password" autocapitalize="none" spellcheck="false" data-lpignore="true" class="flex-1 bg-gray-700 border border-gray-600 rounded p-2 outline-none">
+                    <button type="button" onclick="toggleSecretField('api_secret', this)" class="bg-gray-600 hover:bg-gray-500 border border-gray-500 rounded px-3 text-xs font-bold uppercase">Show</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- NEW LOCATION FOR DISCOVERY BUTTON -->
+        <div class="flex justify-center mb-8">
+            <button onclick="loadDiscovery()" id="discoverBtn" class="w-full bg-indigo-600 hover:bg-indigo-700 py-3 rounded font-bold text-sm uppercase transition shadow-lg border-b-4 border-indigo-900 active:border-b-0">
+                1. Load Policy Objects from PCE
+            </button>
+        </div>
+
+        <hr class="border-gray-700 my-8">
+
+        <!-- Query Filters -->
+        <div class="grid grid-cols-2 gap-6 mb-8">
+            <div class="col-span-2 relative">
+                <label class="block text-sm font-semibold mb-2 text-blue-300 uppercase tracking-tighter">Sources (Labels or IP)</label>
+                <input id="src_labels" type="text" placeholder="Role: DB, App: Core" class="w-full bg-gray-700 border border-gray-600 rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none autocomplete">
+            </div>
+            <div class="col-span-2 relative">
+                <label class="block text-sm font-semibold mb-2 text-blue-300 uppercase tracking-tighter">Destinations (Labels or IP)</label>
+                <input id="dst_labels" type="text" placeholder="Role: Web" class="w-full bg-gray-700 border border-gray-600 rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none autocomplete">
+            </div>
+            <div class="col-span-2 relative">
+                <label class="block text-sm font-semibold mb-2 text-green-300 uppercase tracking-tighter">Services (Service Names - empty for all)</label>
+                <input id="services" type="text" placeholder="MySQL, SSH" class="w-full bg-gray-700 border border-gray-600 rounded p-2 focus:ring-2 focus:ring-green-500 outline-none autocomplete-services">
+            </div>
+            <div class="col-span-1 relative">
+                <label class="block text-sm font-semibold mb-2 text-red-400 uppercase tracking-tighter">Exclusions (Sources)</label>
+                <input id="exclude_src" type="text" placeholder="192.168.1.1, Role: Backup" class="w-full bg-gray-700 border border-gray-600 rounded p-2 focus:ring-2 focus:ring-red-500 outline-none autocomplete">
+            </div>
+            <div class="col-span-1 relative">
+                <label class="block text-sm font-semibold mb-2 text-red-400 uppercase tracking-tighter">Exclusions (Destinations)</label>
+                <input id="exclude_dst" type="text" placeholder="10.0.0.1, App: Monitor" class="w-full bg-gray-700 border border-gray-600 rounded p-2 focus:ring-2 focus:ring-red-500 outline-none autocomplete">
+            </div>
+            <div class="col-span-1">
+                <label class="block text-sm font-semibold mb-2 text-amber-300 uppercase tracking-tighter">Days To Fetch</label>
+                <input id="days" type="number" min="1" max="365" value="90" class="w-full bg-gray-700 border border-gray-600 rounded p-2 focus:ring-2 focus:ring-amber-500 outline-none">
+            </div>
+        </div>
+
+        <hr class="border-gray-700 my-8">
+
+        <!-- File Settings -->
+        <div class="bg-gray-900/50 p-4 rounded-lg mb-8 border border-gray-700">
+            <h2 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4 italic text-center">Export Settings</h2>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1 italic">Target Filename</label>
+                    <input id="file_name" type="text" placeholder="blocked_traffic.csv" class="w-full bg-gray-800 border border-gray-700 rounded p-2 outline-none text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1 italic">Target Folder (Absolute path)</label>
+                    <input id="save_path" type="text" placeholder="/home/user/Desktop" class="w-full bg-gray-800 border border-gray-700 rounded p-2 outline-none text-sm">
+                </div>
+            </div>
+        </div>
+
+        <div class="flex space-x-4 mb-8">
+            <button onclick="startFetch()" id="startBtn" class="flex-1 bg-green-600 hover:bg-green-700 font-bold py-3 px-6 rounded-lg transition duration-200 uppercase tracking-widest shadow-lg border-b-4 border-green-900 active:border-b-0">2. Start Fetch</button>
+            <button onclick="cancelFetch()" id="cancelBtn" class="hidden bg-red-600 hover:bg-red-700 font-bold py-3 px-6 rounded-lg transition duration-200 uppercase tracking-widest text-white shadow-xl">Cancel</button>
+            <button onclick="testConnection()" id="testBtn" class="bg-gray-600 hover:bg-gray-700 font-bold py-3 px-6 rounded-lg transition duration-200 uppercase tracking-widest px-8">Test</button>
+        </div>
+
+        <div class="mb-8 hidden" id="summaryLinkWrap">
+            <a href="/summary" id="summaryLink" class="block rounded-lg border border-cyan-700 bg-cyan-950/40 px-5 py-4 text-sm font-semibold text-cyan-300 hover:bg-cyan-900/40">
+                Open Analytics Dashboard for the latest successful fetch
+            </a>
+        </div>
+
+        <!-- Progress -->
+        <div id="progressArea" class="hidden">
+            <div class="flex justify-between items-center mb-2">
+                <span id="statusLabel" class="text-sm font-semibold text-blue-300 italic">Initializing...</span>
+                <span id="percentLabel" class="text-sm font-bold text-blue-400">0%</span>
+            </div>
+            <div class="w-full bg-gray-700 rounded-full h-4 mb-8 overflow-hidden">
+                <div id="progressBar" class="bg-blue-500 h-full transition-all duration-300" style="width: 0%"></div>
+            </div>
+        </div>
+
+        <div class="bg-black rounded-lg p-4 h-64 overflow-y-auto text-xs font-mono border border-gray-700" id="logBox">
+            <div class="text-gray-500 italic">Logs will appear here...</div>
+        </div>
+    </div>
+
+    <script>
+        let profiles = {};
+        let pollingInterval = null;
+        let pceLabels = [];
+        let pceServices = [];
+        let pceIPLists = [];
+        let pceLabelGroups = [];
+        let pceUserGroups = [];
+        let pceVServices = [];
+        let pceVServers = [];
+
+        window.onload = fetchProfiles;
+
+        async function fetchProfiles() {
+            const res = await fetch('/api/profiles/get');
+            profiles = await res.json();
+            const select = document.getElementById('profileSelect');
+            select.innerHTML = '<option value="">-- Select a Saved PCE --</option>';
+            Object.keys(profiles).forEach(name => {
+                const opt = document.createElement('option');
+                opt.value = name; opt.innerText = name;
+                select.appendChild(opt);
+            });
+        }
+
+        async function loadDiscovery() {
+            const btn = document.getElementById('discoverBtn');
+            btn.innerText = "Loading Policy Objects...";
+            btn.disabled = true;
+            log('Fetching all Policy Objects from PCE...');
+            try {
+                const res = await fetch('/api/discovery', { method: 'POST', body: JSON.stringify(getConfig()) });
+                const data = await res.json();
+                if (data.success) {
+                    pceLabels = data.labels || [];
+                    pceServices = data.services || [];
+                    pceIPLists = data.ipLists || [];
+                    pceLabelGroups = data.labelGroups || [];
+                    pceUserGroups = data.userGroups || [];
+                    pceVServices = data.virtualServices || [];
+                    pceVServers = data.virtualServers || [];
+                    log(`<span class="text-indigo-400 font-bold">Discovery complete! Loaded ${pceLabels.length} Labels, ${pceLabelGroups.length} Label Groups, ${pceIPLists.length} IP Lists, ${pceUserGroups.length} User Groups, ${pceVServices.length} Virtual Services, and ${pceVServers.length} Virtual Servers.</span>`);
+                    setupAutocomplete();
+                } else {
+                    log(`<span class="text-red-400">Discovery failed: ${data.error}</span>`);
+                }
+            } catch (e) {
+                log(`<span class="text-red-400">Error: ${e.message}</span>`);
+            }
+            btn.innerText = "1. Load Policy Objects from PCE";
+            btn.disabled = false;
+        }
+
+        function setupAutocomplete() {
+            const combined = [
+                ...pceLabels, 
+                ...pceIPLists, 
+                ...pceLabelGroups, 
+                ...pceUserGroups, 
+                ...pceVServices, 
+                ...pceVServers
+            ];
+            ['src_labels', 'dst_labels', 'exclude_src', 'exclude_dst'].forEach(id => {
+                autocomplete(document.getElementById(id), combined);
+            });
+            autocomplete(document.getElementById('services'), pceServices);
+        }
+
+        function autocomplete(inp, arr) {
+            let currentFocus;
+            inp.addEventListener("input", function(e) {
+                let a, b, i, val = this.value;
+                closeAllLists();
+                if (!val) return false;
+                const parts = val.split(",");
+                const currentVal = parts[parts.length - 1].trim();
+                if (currentVal.length < 1) return false;
+                currentFocus = -1;
+                a = document.createElement("DIV");
+                a.setAttribute("id", this.id + "autocomplete-list");
+                a.setAttribute("class", "autocomplete-items shadow-2xl rounded-b-lg");
+                this.parentNode.appendChild(a);
+                for (i = 0; i < arr.length; i++) {
+                    if (arr[i].toUpperCase().includes(currentVal.toUpperCase())) {
+                        b = document.createElement("DIV");
+                        const regex = new RegExp(currentVal, "gi");
+                        b.innerHTML = arr[i].replace(regex, "<strong>$&</strong>");
+                        b.innerHTML += "<input type='hidden' value='" + arr[i] + "'>";
+                        b.addEventListener("click", function(e) {
+                            parts[parts.length - 1] = " " + this.getElementsByTagName("input")[0].value;
+                            inp.value = parts.join(",").trim() + ", ";
+                            closeAllLists();
+                            inp.focus();
+                        });
+                        a.appendChild(b);
+                    }
+                }
+            });
+            inp.addEventListener("keydown", function(e) {
+                let x = document.getElementById(this.id + "autocomplete-list");
+                if (x) x = x.getElementsByTagName("div");
+                if (e.keyCode == 40) { currentFocus++; addActive(x); }
+                else if (e.keyCode == 38) { currentFocus--; addActive(x); }
+                else if (e.keyCode == 13) { e.preventDefault(); if (currentFocus > -1) { if (x) x[currentFocus].click(); } }
+            });
+            function addActive(x) {
+                if (!x) return false; removeActive(x);
+                if (currentFocus >= x.length) currentFocus = 0;
+                if (currentFocus < 0) currentFocus = (x.length - 1);
+                x[currentFocus].classList.add("autocomplete-active");
+            }
+            function removeActive(x) { for (let i = 0; i < x.length; i++) x[i].classList.remove("autocomplete-active"); }
+            function closeAllLists(elmnt) {
+                const x = document.getElementsByClassName("autocomplete-items");
+                for (let i = 0; i < x.length; i++) { if (elmnt != x[i] && elmnt != inp) x[i].parentNode.removeChild(x[i]); }
+            }
+            document.addEventListener("click", function (e) { closeAllLists(e.target); });
+        }
+
+        function loadSelectedProfile() {
+            const name = document.getElementById('profileSelect').value;
+            if (!name) return;
+            const p = profiles[name];
+            document.getElementById('profile_name').value = p.name || '';
+            document.getElementById('pce_url').value = p.pce_url || '';
+            document.getElementById('org_id').value = p.org_id || '';
+            document.getElementById('api_key').value = p.api_key || '';
+            document.getElementById('api_secret').value = p.api_secret || '';
+            document.getElementById('src_labels').value = p.src_labels || '';
+            document.getElementById('dst_labels').value = p.dst_labels || '';
+            document.getElementById('exclude_src').value = p.exclude_src || '';
+            document.getElementById('exclude_dst').value = p.exclude_dst || '';
+            document.getElementById('services').value = p.services || '';
+            document.getElementById('save_path').value = p.save_path || '';
+            document.getElementById('file_name').value = p.file_name || '';
+            document.getElementById('days').value = p.days || 90;
+        }
+
+        async function saveProfile() {
+            const name = document.getElementById('profile_name').value;
+            if (!name) return alert("Please enter a profile name");
+            const config = getConfig(); config.name = name;
+            await fetch('/api/profiles/save', { method: 'POST', body: JSON.stringify(config) });
+            fetchProfiles(); log(`Profile '${name}' saved.`);
+        }
+
+        async function deleteProfile() {
+            const name = document.getElementById('profileSelect').value;
+            if (!name) return;
+            if (!confirm(`Delete profile '${name}'?`)) return;
+            await fetch('/api/profiles/delete', { method: 'POST', body: JSON.stringify({name}) });
+            fetchProfiles(); log(`Profile '${name}' deleted.`);
+        }
+
+        function log(msg) {
+            const div = document.createElement('div');
+            div.className = 'mb-1';
+            div.innerHTML = `<span class="text-gray-500">[${new Date().toLocaleTimeString()}]</span> ${msg}`;
+            const box = document.getElementById('logBox');
+            box.appendChild(div);
+            box.scrollTop = box.scrollHeight;
+        }
+
+        function toggleSecretField(fieldId, button) {
+            const input = document.getElementById(fieldId);
+            const nextType = input.type === 'password' ? 'text' : 'password';
+            input.type = nextType;
+            button.innerText = nextType === 'password' ? 'Show' : 'Hide';
+        }
+
+        async function testConnection() {
+            log('Testing connection...');
+            try {
+                const res = await fetch('/api/test', { method: 'POST', body: JSON.stringify(getConfig()) });
+                const data = await res.json();
+                if (data.success) log(`<span class="text-green-400 font-bold underline italic">Success! Found ${data.labelCount} labels.</span>`);
+                else log(`<span class="text-red-400">Error: ${data.error}</span>`);
+            } catch (e) { log(`<span class="text-red-400">Fatal: ${e.message}</span>`); }
+        }
+
+        async function cancelFetch() {
+            log('<span class="text-red-400 font-bold">Sending Cancel signal...</span>');
+            await fetch('/api/cancel', { method: 'POST' });
+        }
+
+        async function startFetch() {
+            document.getElementById('startBtn').classList.add('hidden');
+            document.getElementById('cancelBtn').classList.remove('hidden');
+            document.getElementById('progressArea').classList.remove('hidden');
+            document.getElementById('summaryLinkWrap').classList.add('hidden');
+            log(`Starting ${getRequestedDays()}-day extraction.`);
+            try {
+                const res = await fetch('/api/start', { method: 'POST', body: JSON.stringify(getConfig()) });
+                const data = await res.json();
+                if (!data.success) {
+                    log(`<span class="text-red-400">Start failed: ${data.error || 'Unknown error'}</span>`);
+                    resetButtons();
+                    return;
+                }
+                pollStatus();
+            } catch (e) { log(`<span class="text-red-400">Fatal: ${e.message}</span>`); resetButtons(); }
+        }
+
+        function pollStatus() {
+            if (pollingInterval) clearInterval(pollingInterval);
+            pollingInterval = setInterval(async () => {
+                const res = await fetch('/api/status');
+                const data = await res.json();
+                const requestedDays = data.requestedDays || 90;
+                const percent = Math.round((data.completedDays / requestedDays) * 100);
+                document.getElementById('progressBar').style.width = `${percent}%`;
+                document.getElementById('percentLabel').innerText = `${percent}%`;
+                document.getElementById('statusLabel').innerText = `Processed ${data.completedDays}/${requestedDays} days (${data.totalConnections} unique connections)`;
+                if (data.newLogs) data.newLogs.forEach(msg => log(msg));
+                if (data.done || data.cancelled) {
+                    clearInterval(pollingInterval); resetButtons();
+                    if (data.done && data.fileName) {
+                        log(`<span class="text-green-400 font-bold underline italic">COMPLETED: ${data.fileName}</span>`);
+                        document.getElementById('summaryLinkWrap').classList.remove('hidden');
+                    }
+                    if (data.done && !data.fileName && !data.cancelled) log(`<span class="text-red-400 font-bold italic">RUN FINISHED WITHOUT OUTPUT. Check logs for errors.</span>`);
+                    if (data.cancelled) log(`<span class="text-orange-400 font-bold italic">CANCELLED BY USER</span>`);
+                }
+            }, 1000);
+        }
+
+        function resetButtons() {
+            document.getElementById('startBtn').classList.remove('hidden');
+            document.getElementById('cancelBtn').classList.add('hidden');
+        }
+
+        function getRequestedDays() {
+            const raw = parseInt(document.getElementById('days').value, 10);
+            if (Number.isNaN(raw) || raw < 1) return 90;
+            return Math.min(raw, 365);
+        }
+
+        function getConfig() {
+            return {
+                pce_url: document.getElementById('pce_url').value,
+                org_id: document.getElementById('org_id').value,
+                api_key: document.getElementById('api_key').value,
+                api_secret: document.getElementById('api_secret').value,
+                src_labels: document.getElementById('src_labels').value,
+                dst_labels: document.getElementById('dst_labels').value,
+                exclude_src: document.getElementById('exclude_src').value,
+                exclude_dst: document.getElementById('exclude_dst').value,
+                services: document.getElementById('services').value,
+                save_path: document.getElementById('save_path').value,
+                file_name: document.getElementById('file_name').value,
+                days: getRequestedDays()
+            };
+        }
+    </script>
+</body>
+</html>
