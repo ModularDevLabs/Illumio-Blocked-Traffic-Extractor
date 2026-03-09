@@ -38,6 +38,7 @@ Discovery notes:
 -   **Load Policy Objects from PCE** now uses Illumio's asynchronous collection workflow so it can load full collections from larger PCEs instead of stopping at the first 500 objects.
 -   Discovery now runs up to 3 collection jobs in parallel to reduce wait time on larger PCEs.
 -   On large environments, discovery may still take longer because the PCE prepares full collection results before the UI autocomplete cache is populated.
+-   The extractor reuses the most recently loaded discovery cache for the same PCE credentials so a fetch does not need to reload the full object inventory again.
 
 ## 4. Running an Extraction
 1.  **Select/Enter Credentials:** Ensure the PCE details are correct.
