@@ -249,83 +249,182 @@ func handleDiscovery(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	client := illumio.NewClient(cfg.PCEURL, cfg.OrgID, cfg.APIKey, cfg.APISecret)
-	addLog("Discovery: loading labels...")
-	labels, err := client.GetLabels(ctx)
-	if err != nil {
-		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
-		return
+	type discoveryTask struct {
+		name  string
+		fetch func(context.Context) ([]string, error)
+		store func([]string)
 	}
-	addLog(fmt.Sprintf("Discovery: loaded %d labels.", len(labels)))
-	addLog("Discovery: loading services...")
-	services, err := client.GetServices(ctx)
-	if err != nil {
-		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
-		return
-	}
-	addLog(fmt.Sprintf("Discovery: loaded %d services.", len(services)))
-	addLog("Discovery: loading IP lists...")
-	ipLists, err := client.GetIPLists(ctx)
-	if err != nil {
-		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
-		return
-	}
-	addLog(fmt.Sprintf("Discovery: loaded %d IP lists.", len(ipLists)))
-	addLog("Discovery: loading label groups...")
-	labelGroups, err := client.GetLabelGroups(ctx)
-	if err != nil {
-		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
-		return
-	}
-	addLog(fmt.Sprintf("Discovery: loaded %d label groups.", len(labelGroups)))
-	addLog("Discovery: loading user groups...")
-	userGroups, err := client.GetUserGroups(ctx)
-	if err != nil {
-		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
-		return
-	}
-	addLog(fmt.Sprintf("Discovery: loaded %d user groups.", len(userGroups)))
-	addLog("Discovery: loading virtual services...")
-	vServices, err := client.GetVirtualServices(ctx)
-	if err != nil {
-		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
-		return
-	}
-	addLog(fmt.Sprintf("Discovery: loaded %d virtual services.", len(vServices)))
-	addLog("Discovery: loading virtual servers...")
-	vServers, err := client.GetVirtualServers(ctx)
-	if err != nil {
-		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
-		return
-	}
-	addLog(fmt.Sprintf("Discovery: loaded %d virtual servers.", len(vServers)))
 
-	labelNames := []string{}
-	for _, l := range labels {
-		labelNames = append(labelNames, l.Value)
+	var (
+		labelNames   []string
+		serviceNames []string
+		ipListNames  []string
+		lgNames      []string
+		ugNames      []string
+		vsNames      []string
+		vsvrNames    []string
+		resultMu     sync.Mutex
+		firstErr     error
+		errOnce      sync.Once
+	)
+
+	store := func(target *[]string) func([]string) {
+		return func(values []string) {
+			resultMu.Lock()
+			*target = values
+			resultMu.Unlock()
+		}
 	}
-	serviceNames := []string{}
-	for _, s := range services {
-		serviceNames = append(serviceNames, s.Name)
+
+	tasks := []discoveryTask{
+		{
+			name: "labels",
+			fetch: func(ctx context.Context) ([]string, error) {
+				labels, err := client.GetLabels(ctx)
+				if err != nil {
+					return nil, err
+				}
+				values := make([]string, 0, len(labels))
+				for _, item := range labels {
+					values = append(values, item.Value)
+				}
+				return values, nil
+			},
+			store: store(&labelNames),
+		},
+		{
+			name: "services",
+			fetch: func(ctx context.Context) ([]string, error) {
+				services, err := client.GetServices(ctx)
+				if err != nil {
+					return nil, err
+				}
+				values := make([]string, 0, len(services))
+				for _, item := range services {
+					values = append(values, item.Name)
+				}
+				return values, nil
+			},
+			store: store(&serviceNames),
+		},
+		{
+			name: "IP lists",
+			fetch: func(ctx context.Context) ([]string, error) {
+				ipLists, err := client.GetIPLists(ctx)
+				if err != nil {
+					return nil, err
+				}
+				values := make([]string, 0, len(ipLists))
+				for _, item := range ipLists {
+					values = append(values, item.Name)
+				}
+				return values, nil
+			},
+			store: store(&ipListNames),
+		},
+		{
+			name: "label groups",
+			fetch: func(ctx context.Context) ([]string, error) {
+				labelGroups, err := client.GetLabelGroups(ctx)
+				if err != nil {
+					return nil, err
+				}
+				values := make([]string, 0, len(labelGroups))
+				for _, item := range labelGroups {
+					values = append(values, item.Name)
+				}
+				return values, nil
+			},
+			store: store(&lgNames),
+		},
+		{
+			name: "user groups",
+			fetch: func(ctx context.Context) ([]string, error) {
+				userGroups, err := client.GetUserGroups(ctx)
+				if err != nil {
+					return nil, err
+				}
+				values := make([]string, 0, len(userGroups))
+				for _, item := range userGroups {
+					values = append(values, item.Name)
+				}
+				return values, nil
+			},
+			store: store(&ugNames),
+		},
+		{
+			name: "virtual services",
+			fetch: func(ctx context.Context) ([]string, error) {
+				virtualServices, err := client.GetVirtualServices(ctx)
+				if err != nil {
+					return nil, err
+				}
+				values := make([]string, 0, len(virtualServices))
+				for _, item := range virtualServices {
+					values = append(values, item.Name)
+				}
+				return values, nil
+			},
+			store: store(&vsNames),
+		},
+		{
+			name: "virtual servers",
+			fetch: func(ctx context.Context) ([]string, error) {
+				virtualServers, err := client.GetVirtualServers(ctx)
+				if err != nil {
+					return nil, err
+				}
+				values := make([]string, 0, len(virtualServers))
+				for _, item := range virtualServers {
+					values = append(values, item.Name)
+				}
+				return values, nil
+			},
+			store: store(&vsvrNames),
+		},
 	}
-	ipListNames := []string{}
-	for _, i := range ipLists {
-		ipListNames = append(ipListNames, i.Name)
+
+	addLog("Discovery: starting parallel collection load (up to 3 collection jobs at a time)...")
+	jobs := make(chan discoveryTask)
+	var wg sync.WaitGroup
+	workerCount := 3
+
+	for i := 0; i < workerCount; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for task := range jobs {
+				if ctx.Err() != nil {
+					return
+				}
+
+				addLog(fmt.Sprintf("Discovery: loading %s...", task.name))
+				values, err := task.fetch(ctx)
+				if err != nil {
+					errOnce.Do(func() {
+						firstErr = err
+						cancel()
+					})
+					return
+				}
+				task.store(values)
+				addLog(fmt.Sprintf("Discovery: loaded %d %s.", len(values), task.name))
+			}
+		}()
 	}
-	lgNames := []string{}
-	for _, i := range labelGroups {
-		lgNames = append(lgNames, i.Name)
+
+	for _, task := range tasks {
+		if ctx.Err() != nil {
+			break
+		}
+		jobs <- task
 	}
-	ugNames := []string{}
-	for _, i := range userGroups {
-		ugNames = append(ugNames, i.Name)
-	}
-	vsNames := []string{}
-	for _, i := range vServices {
-		vsNames = append(vsNames, i.Name)
-	}
-	vsvrNames := []string{}
-	for _, i := range vServers {
-		vsvrNames = append(vsvrNames, i.Name)
+	close(jobs)
+	wg.Wait()
+
+	if firstErr != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": firstErr.Error()})
+		return
 	}
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
