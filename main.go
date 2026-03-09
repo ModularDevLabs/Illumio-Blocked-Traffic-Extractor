@@ -196,6 +196,11 @@ func main() {
 		w.Header().Set("Content-Type", "text/html")
 		w.Write(data)
 	})
+	http.HandleFunc("/executive-summary", func(w http.ResponseWriter, r *http.Request) {
+		data, _ := staticFiles.ReadFile("frontend/executive-summary.html")
+		w.Header().Set("Content-Type", "text/html")
+		w.Write(data)
+	})
 
 	http.HandleFunc("/api/test", handleTest)
 	http.HandleFunc("/api/discovery", handleDiscovery)

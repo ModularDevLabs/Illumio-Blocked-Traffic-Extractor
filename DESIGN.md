@@ -31,8 +31,9 @@ To provide a stable, cross-platform standalone tool that extracts a user-selecte
 
 ### 3.4. Analytics and Review
 - **Summary Route:** `/summary`
+- **Executive Route:** `/executive-summary`
 - **In-Memory Analytics:** After a successful fetch, the backend derives analytics state from the aggregated flow set.
-- **Views:** Port/protocol summary, environment cross-talk, app-to-app matrix, heatmaps, top talkers, and external/unmanaged summaries.
+- **Views:** Port/protocol summary, environment cross-talk, app-to-app matrix, heatmaps, top talkers, external/unmanaged summaries, and a separate executive-summary page.
 - **CSV Re-Import:** Previously generated CSV files from this tool can be uploaded to rebuild the analytics dashboard without rerunning the query.
 
 ## 4. CSV Schema

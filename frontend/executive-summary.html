@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Illumio Executive Summary</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap');
+        body { font-family: 'Manrope', sans-serif; }
+    </style>
+</head>
+<body class="min-h-screen bg-stone-950 text-stone-100">
+    <div class="mx-auto max-w-7xl px-6 py-8 md:px-10">
+        <div class="mb-8 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+                <p class="mb-2 text-xs uppercase tracking-[0.4em] text-emerald-400">Executive View</p>
+                <h1 class="text-4xl font-extrabold tracking-tight text-white md:text-5xl">Blocked Traffic Executive Summary</h1>
+                <p id="fileLabel" class="mt-3 text-sm text-stone-400">Loading latest analytics...</p>
+            </div>
+            <div class="flex flex-wrap gap-3">
+                <a href="/" class="inline-flex items-center rounded-lg bg-stone-800 px-4 py-2 text-sm font-semibold hover:bg-stone-700">Back to Extractor</a>
+                <a href="/summary" class="inline-flex items-center rounded-lg bg-cyan-700 px-4 py-2 text-sm font-semibold hover:bg-cyan-600">Detailed Analytics</a>
+                <button onclick="loadExecutiveSummary()" class="inline-flex items-center rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold hover:bg-emerald-600">Refresh</button>
+            </div>
+        </div>
+
+        <div class="mb-8 rounded-3xl border border-emerald-900/70 bg-gradient-to-br from-emerald-950 via-stone-900 to-stone-950 p-6 shadow-2xl shadow-emerald-950/30">
+            <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+                <div class="rounded-2xl border border-white/10 bg-white/5 p-5">
+                    <p class="text-xs uppercase tracking-[0.25em] text-stone-400">Total Blocked Flows</p>
+                    <p id="totalFlows" class="mt-3 text-4xl font-extrabold text-emerald-300">0</p>
+                </div>
+                <div class="rounded-2xl border border-white/10 bg-white/5 p-5">
+                    <p class="text-xs uppercase tracking-[0.25em] text-stone-400">Unique Connections</p>
+                    <p id="totalConnections" class="mt-3 text-4xl font-extrabold text-cyan-300">0</p>
+                </div>
+                <div class="rounded-2xl border border-white/10 bg-white/5 p-5">
+                    <p class="text-xs uppercase tracking-[0.25em] text-stone-400">Environments Involved</p>
+                    <p id="environmentCount" class="mt-3 text-4xl font-extrabold text-fuchsia-300">0</p>
+                </div>
+                <div class="rounded-2xl border border-white/10 bg-white/5 p-5">
+                    <p class="text-xs uppercase tracking-[0.25em] text-stone-400">External / Unmanaged Flows</p>
+                    <p id="externalFlowCount" class="mt-3 text-4xl font-extrabold text-amber-300">0</p>
+                </div>
+                <div class="rounded-2xl border border-white/10 bg-white/5 p-5">
+                    <p class="text-xs uppercase tracking-[0.25em] text-stone-400">Top Risky Service</p>
+                    <p id="topRiskyService" class="mt-3 text-2xl font-extrabold text-rose-300">N/A</p>
+                    <p id="topRiskyServiceFlows" class="mt-2 text-sm text-stone-400">0 flows</p>
+                </div>
+            </div>
+        </div>
+
+        <div id="emptyState" class="hidden rounded-3xl border border-stone-800 bg-stone-900/80 p-10 text-center">
+            <p class="text-lg font-semibold text-stone-200">No executive analytics are available yet.</p>
+            <p class="mt-2 text-sm text-stone-400">Run a fetch or import a CSV first. This page reuses the same analytics dataset as the detailed dashboard.</p>
+        </div>
+
+        <div id="content" class="hidden space-y-8">
+            <section class="grid gap-8 xl:grid-cols-[1.2fr_0.8fr]">
+                <div class="rounded-3xl border border-stone-800 bg-stone-900 p-6">
+                    <div class="flex items-center justify-between gap-4">
+                        <div>
+                            <p class="text-xs uppercase tracking-[0.35em] text-stone-500">Headline Findings</p>
+                            <h2 class="mt-2 text-2xl font-bold text-white">What stands out in this dataset</h2>
+                        </div>
+                        <div class="rounded-full bg-emerald-950/70 px-4 py-2 text-xs font-semibold uppercase tracking-[0.25em] text-emerald-300">Presentation Ready</div>
+                    </div>
+                    <div id="headlineFindings" class="mt-6 grid gap-4"></div>
+                </div>
+
+                <div class="rounded-3xl border border-stone-800 bg-stone-900 p-6">
+                    <p class="text-xs uppercase tracking-[0.35em] text-stone-500">Risky Services</p>
+                    <h2 class="mt-2 text-2xl font-bold text-white">Blocked traffic by high-risk service</h2>
+                    <div id="riskyServiceChart" class="mt-6 space-y-3"></div>
+                </div>
+            </section>
+
+            <section class="grid gap-8 xl:grid-cols-2">
+                <div class="rounded-3xl border border-stone-800 bg-stone-900 p-6">
+                    <p class="text-xs uppercase tracking-[0.35em] text-stone-500">Cross-Talk</p>
+                    <h2 class="mt-2 text-2xl font-bold text-white">Top environment-to-environment relationships</h2>
+                    <div id="crossTalkList" class="mt-6 space-y-3"></div>
+                </div>
+
+                <div class="rounded-3xl border border-stone-800 bg-stone-900 p-6">
+                    <p class="text-xs uppercase tracking-[0.35em] text-stone-500">External Spotlight</p>
+                    <h2 class="mt-2 text-2xl font-bold text-white">Most significant external / unmanaged destinations</h2>
+                    <div id="externalSpotlight" class="mt-6 space-y-3"></div>
+                </div>
+            </section>
+
+            <section class="rounded-3xl border border-stone-800 bg-stone-900 p-6">
+                <p class="text-xs uppercase tracking-[0.35em] text-stone-500">Environment Scorecard</p>
+                <h2 class="mt-2 text-2xl font-bold text-white">Where blocked traffic is concentrated</h2>
+                <div id="environmentScorecards" class="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3"></div>
+            </section>
+        </div>
+    </div>
+
+    <script>
+        const riskyServiceCatalog = new Map([
+            ['tcp:80', 'HTTP'],
+            ['udp:5355', 'LLMNR'],
+            ['tcp:2049', 'NFS'],
+            ['udp:2049', 'NFS'],
+            ['tcp:3389', 'RDP'],
+            ['udp:3389', 'RDP'],
+            ['tcp:135', 'MSFT RPC'],
+            ['tcp:445', 'SMB'],
+            ['udp:445', 'SMB'],
+            ['tcp:22', 'SSH'],
+            ['udp:22', 'SSH'],
+            ['tcp:5985', 'WinRM'],
+            ['tcp:5986', 'WinRM Secure'],
+            ['tcp:20', 'FTP Data'],
+            ['tcp:21', 'FTP Control'],
+            ['tcp:4444', 'Metasploit'],
+            ['udp:4444', 'Metasploit'],
+            ['udp:5353', 'Multicast DNS'],
+            ['udp:137', 'NetBIOS'],
+            ['udp:138', 'NetBIOS'],
+            ['tcp:137', 'NetBIOS'],
+            ['tcp:139', 'NetBIOS'],
+            ['tcp:110', 'POP3'],
+            ['tcp:1723', 'PPTP'],
+            ['udp:1723', 'PPTP'],
+            ['udp:1900', 'SSDP'],
+            ['tcp:111', 'SunRPC'],
+            ['udp:111', 'SunRPC'],
+            ['tcp:5938', 'TeamViewer'],
+            ['udp:5938', 'TeamViewer'],
+            ['tcp:23', 'Telnet'],
+            ['udp:23', 'Telnet'],
+            ['tcp:5900', 'VNC'],
+            ['udp:5900', 'VNC'],
+            ['tcp:3702', 'WSD'],
+            ['udp:3702', 'WSD']
+        ]);
+
+        function formatNumber(value) {
+            return new Intl.NumberFormat().format(value || 0);
+        }
+
+        function percentage(value, total) {
+            if (!total) return '0.0%';
+            return `${((value / total) * 100).toFixed(1)}%`;
+        }
+
+        function riskyServiceRows(summary) {
+            const serviceMap = new Map();
+            (summary || []).forEach(row => {
+                const key = `${String(row.protocol || '').toLowerCase()}:${row.port}`;
+                const serviceName = riskyServiceCatalog.get(key);
+                if (!serviceName) return;
+                const entry = serviceMap.get(serviceName) || {
+                    name: serviceName,
+                    flow_count: 0,
+                    unique_connections: 0
+                };
+                entry.flow_count += row.flow_count || 0;
+                entry.unique_connections += row.unique_connections || 0;
+                serviceMap.set(serviceName, entry);
+            });
+
+            return Array.from(serviceMap.values()).sort((a, b) => b.flow_count - a.flow_count || a.name.localeCompare(b.name));
+        }
+
+        function environmentNames(insights) {
+            const set = new Set();
+            (insights.env_matrix || []).forEach(row => {
+                if (row.source && row.source !== 'External/Unmanaged') set.add(row.source);
+                if (row.destination && row.destination !== 'External/Unmanaged') set.add(row.destination);
+            });
+            return Array.from(set);
+        }
+
+        function externalFlowTotal(insights) {
+            return (insights.traffic_categories || [])
+                .filter(row => String(row.name || '').includes('External/Unmanaged'))
+                .reduce((sum, row) => sum + (row.flow_count || 0), 0);
+        }
+
+        function topCrossTalk(insights) {
+            return (insights.env_matrix || [])
+                .filter(row => row.source !== 'External/Unmanaged' && row.destination !== 'External/Unmanaged')
+                .slice(0, 6);
+        }
+
+        function environmentScorecards(insights) {
+            const scoreMap = new Map();
+
+            (insights.env_matrix || []).forEach(row => {
+                if (!row.source) return;
+
+                const source = scoreMap.get(row.source) || {
+                    name: row.source,
+                    outbound: 0,
+                    inbound: 0,
+                    external: 0
+                };
+                source.outbound += row.flow_count || 0;
+                if (row.destination === 'External/Unmanaged') {
+                    source.external += row.flow_count || 0;
+                }
+                scoreMap.set(row.source, source);
+
+                if (!row.destination) return;
+                const destination = scoreMap.get(row.destination) || {
+                    name: row.destination,
+                    outbound: 0,
+                    inbound: 0,
+                    external: 0
+                };
+                destination.inbound += row.flow_count || 0;
+                if (row.source === 'External/Unmanaged') {
+                    destination.external += row.flow_count || 0;
+                }
+                scoreMap.set(row.destination, destination);
+            });
+
+            return Array.from(scoreMap.values())
+                .filter(row => row.name && row.name !== 'External/Unmanaged')
+                .map(row => ({ ...row, total: row.inbound + row.outbound }))
+                .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name))
+                .slice(0, 6);
+        }
+
+        function buildFindings(summary, insights) {
+            const totalFlows = summary.reduce((sum, row) => sum + (row.flow_count || 0), 0);
+            const risky = riskyServiceRows(summary);
+            const crossTalk = topCrossTalk(insights);
+            const topExternal = (insights.top_destination_ips || [])[0];
+            const categories = insights.traffic_categories || [];
+            const topCategory = categories.length > 0 ? categories[0] : null;
+            const findings = [];
+
+            if (crossTalk[0]) {
+                findings.push({
+                    title: `${crossTalk[0].source} to ${crossTalk[0].destination} is the busiest blocked environment path`,
+                    body: `${formatNumber(crossTalk[0].flow_count)} flows, representing ${percentage(crossTalk[0].flow_count, totalFlows)} of all blocked traffic in the current dataset.`
+                });
+            }
+
+            if (risky[0]) {
+                findings.push({
+                    title: `${risky[0].name} is the top risky blocked service`,
+                    body: `${formatNumber(risky[0].flow_count)} flows across ${formatNumber(risky[0].unique_connections)} unique connections.`
+                });
+            }
+
+            if (topCategory) {
+                findings.push({
+                    title: `${topCategory.name} is the dominant traffic boundary pattern`,
+                    body: `${formatNumber(topCategory.flow_count)} flows across ${formatNumber(topCategory.unique_connections)} unique connections.`
+                });
+            }
+
+            if (topExternal) {
+                findings.push({
+                    title: `${topExternal.name} is the leading external or unmanaged destination`,
+                    body: `${formatNumber(topExternal.flow_count)} blocked flows were directed to this endpoint.`
+                });
+            }
+
+            return findings.slice(0, 4);
+        }
+
+        function renderFindings(findings) {
+            const container = document.getElementById('headlineFindings');
+            container.innerHTML = '';
+            findings.forEach((finding, index) => {
+                const card = document.createElement('div');
+                card.className = 'rounded-2xl border border-stone-800 bg-stone-950/70 p-5';
+                card.innerHTML = `
+                    <div class="mb-3 flex items-center gap-3">
+                        <div class="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-500/15 text-sm font-bold text-emerald-300">0${index + 1}</div>
+                        <div class="text-lg font-semibold text-white">${finding.title}</div>
+                    </div>
+                    <p class="text-sm leading-6 text-stone-400">${finding.body}</p>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        function renderRiskyServices(rows, totalFlows) {
+            const container = document.getElementById('riskyServiceChart');
+            if (!rows.length) {
+                container.innerHTML = '<div class="rounded-2xl bg-stone-950/70 px-4 py-4 text-sm text-stone-500">No risky service filters are represented in the loaded dataset.</div>';
+                return;
+            }
+
+            container.innerHTML = '';
+            rows.slice(0, 8).forEach(row => {
+                const width = totalFlows ? Math.max(8, (row.flow_count / totalFlows) * 100) : 8;
+                const item = document.createElement('div');
+                item.className = 'space-y-2';
+                item.innerHTML = `
+                    <div class="flex items-center justify-between text-sm">
+                        <div class="font-semibold text-stone-100">${row.name}</div>
+                        <div class="text-stone-400">${formatNumber(row.flow_count)} flows</div>
+                    </div>
+                    <div class="h-3 rounded-full bg-stone-800">
+                        <div class="h-3 rounded-full bg-gradient-to-r from-rose-500 via-amber-400 to-emerald-400" style="width:${Math.min(width, 100).toFixed(1)}%"></div>
+                    </div>
+                    <div class="text-xs text-stone-500">${formatNumber(row.unique_connections)} unique connections</div>
+                `;
+                container.appendChild(item);
+            });
+        }
+
+        function renderCrossTalk(rows, totalFlows) {
+            const container = document.getElementById('crossTalkList');
+            container.innerHTML = '';
+            rows.forEach(row => {
+                const item = document.createElement('div');
+                item.className = 'rounded-2xl border border-stone-800 bg-stone-950/70 p-4';
+                item.innerHTML = `
+                    <div class="flex items-start justify-between gap-4">
+                        <div>
+                            <div class="text-base font-semibold text-white">${row.source} -> ${row.destination}</div>
+                            <div class="mt-1 text-sm text-stone-400">${formatNumber(row.unique_connections)} unique connections</div>
+                        </div>
+                        <div class="text-right">
+                            <div class="text-xl font-extrabold text-fuchsia-300">${formatNumber(row.flow_count)}</div>
+                            <div class="text-xs uppercase tracking-[0.25em] text-stone-500">${percentage(row.flow_count, totalFlows)}</div>
+                        </div>
+                    </div>
+                `;
+                container.appendChild(item);
+            });
+        }
+
+        function renderExternalSpotlight(rows) {
+            const container = document.getElementById('externalSpotlight');
+            const filtered = (rows || []).filter(row => row.name !== 'External/Unmanaged').slice(0, 6);
+            if (!filtered.length) {
+                container.innerHTML = '<div class="rounded-2xl bg-stone-950/70 px-4 py-4 text-sm text-stone-500">No external or unmanaged destination concentration is present in the loaded dataset.</div>';
+                return;
+            }
+
+            container.innerHTML = '';
+            filtered.forEach(row => {
+                const item = document.createElement('div');
+                item.className = 'rounded-2xl border border-stone-800 bg-stone-950/70 p-4';
+                item.innerHTML = `
+                    <div class="flex items-start justify-between gap-4">
+                        <div>
+                            <div class="text-base font-semibold text-white">${row.name}</div>
+                            <div class="mt-1 text-sm text-stone-400">${formatNumber(row.unique_connections)} unique connections</div>
+                        </div>
+                        <div class="text-right text-xl font-extrabold text-amber-300">${formatNumber(row.flow_count)}</div>
+                    </div>
+                `;
+                container.appendChild(item);
+            });
+        }
+
+        function renderEnvironmentScorecards(rows, totalFlows) {
+            const container = document.getElementById('environmentScorecards');
+            container.innerHTML = '';
+            rows.forEach(row => {
+                const card = document.createElement('div');
+                card.className = 'rounded-2xl border border-stone-800 bg-stone-950/70 p-5';
+                card.innerHTML = `
+                    <div class="flex items-center justify-between gap-4">
+                        <div class="text-lg font-semibold text-white">${row.name}</div>
+                        <div class="text-sm font-bold text-emerald-300">${percentage(row.total, totalFlows)}</div>
+                    </div>
+                    <div class="mt-4 grid gap-3 text-sm text-stone-300">
+                        <div class="flex items-center justify-between rounded-xl bg-stone-900 px-3 py-2">
+                            <span>Outbound blocked flows</span>
+                            <span class="font-semibold text-white">${formatNumber(row.outbound)}</span>
+                        </div>
+                        <div class="flex items-center justify-between rounded-xl bg-stone-900 px-3 py-2">
+                            <span>Inbound blocked flows</span>
+                            <span class="font-semibold text-white">${formatNumber(row.inbound)}</span>
+                        </div>
+                        <div class="flex items-center justify-between rounded-xl bg-stone-900 px-3 py-2">
+                            <span>External / unmanaged touchpoints</span>
+                            <span class="font-semibold text-amber-300">${formatNumber(row.external)}</span>
+                        </div>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        function renderExecutiveSummary(payload) {
+            const summary = payload.summary || [];
+            const insights = payload.insights || {};
+            const totalFlows = summary.reduce((sum, row) => sum + (row.flow_count || 0), 0);
+            const totalConnections = summary.reduce((sum, row) => sum + (row.unique_connections || 0), 0);
+            const envCount = environmentNames(insights).length;
+            const risky = riskyServiceRows(summary);
+            const externalFlows = externalFlowTotal(insights);
+            const topRisky = risky[0];
+
+            document.getElementById('fileLabel').innerText = `Current dataset: ${payload.fileName}`;
+            document.getElementById('totalFlows').innerText = formatNumber(totalFlows);
+            document.getElementById('totalConnections').innerText = formatNumber(totalConnections);
+            document.getElementById('environmentCount').innerText = formatNumber(envCount);
+            document.getElementById('externalFlowCount').innerText = formatNumber(externalFlows);
+            document.getElementById('topRiskyService').innerText = topRisky ? topRisky.name : 'N/A';
+            document.getElementById('topRiskyServiceFlows').innerText = topRisky ? `${formatNumber(topRisky.flow_count)} flows` : '0 flows';
+
+            renderFindings(buildFindings(summary, insights));
+            renderRiskyServices(risky, totalFlows);
+            renderCrossTalk(topCrossTalk(insights), totalFlows);
+            renderExternalSpotlight(insights.top_destination_ips || []);
+            renderEnvironmentScorecards(environmentScorecards(insights), totalFlows);
+        }
+
+        async function loadExecutiveSummary() {
+            const fileLabel = document.getElementById('fileLabel');
+            fileLabel.innerText = 'Loading latest analytics...';
+            try {
+                const res = await fetch('/api/results/summary');
+                const data = await res.json();
+                if (!data.summary || data.summary.length === 0) {
+                    document.getElementById('emptyState').classList.remove('hidden');
+                    document.getElementById('content').classList.add('hidden');
+                    fileLabel.innerText = data.fileName ? `Latest run: ${data.fileName}` : 'No successful fetch is currently loaded.';
+                    return;
+                }
+
+                document.getElementById('emptyState').classList.add('hidden');
+                document.getElementById('content').classList.remove('hidden');
+                renderExecutiveSummary(data);
+            } catch (error) {
+                document.getElementById('emptyState').classList.remove('hidden');
+                document.getElementById('content').classList.add('hidden');
+                fileLabel.innerText = `Failed to load executive analytics: ${error.message}`;
+            }
+        }
+
+        window.onload = loadExecutiveSummary;
+    </script>
+</body>
+</html>
