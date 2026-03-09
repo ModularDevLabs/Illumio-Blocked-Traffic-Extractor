@@ -60,6 +60,32 @@
             --chip-text: #fdba74;
         }
 
+        body[data-theme="illumio-light"] {
+            --bg: #f8f5ef;
+            --panel: rgba(255, 255, 255, 0.94);
+            --panel-strong: #fffaf3;
+            --panel-soft: rgba(255, 255, 255, 0.86);
+            --border: rgba(234, 88, 12, 0.18);
+            --text: #3f2f24;
+            --muted: #8a7667;
+            --headline: #2f1f17;
+            --accent: #f97316;
+            --accent-strong: #ea580c;
+            --accent-soft: rgba(249, 115, 22, 0.12);
+            --secondary: #fb923c;
+            --tertiary: #c97d44;
+            --warning: #d4a373;
+            --danger: #dc2626;
+            --hero-a: #fff7ed;
+            --hero-b: #f8f1e7;
+            --hero-c: #efe2d1;
+            --bar-start: #dc2626;
+            --bar-mid: #f97316;
+            --bar-end: #d4a373;
+            --chip-bg: rgba(249, 115, 22, 0.14);
+            --chip-text: #c2410c;
+        }
+
         body {
             font-family: 'Manrope', sans-serif;
             background:
@@ -67,6 +93,12 @@
                 linear-gradient(180deg, var(--bg), #020617);
             color: var(--text);
             transition: background 200ms ease, color 200ms ease;
+        }
+
+        body[data-theme="illumio-light"] {
+            background:
+                radial-gradient(circle at top left, rgba(249, 115, 22, 0.10), transparent 26%),
+                linear-gradient(180deg, #fffdf9, var(--bg));
         }
 
         .panel {
@@ -154,7 +186,8 @@
             <div class="flex flex-wrap items-center gap-3">
                 <div class="flex rounded-xl p-1 panel-soft">
                     <button id="defaultThemeBtn" type="button" onclick="applyTheme('default')" class="theme-button active rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em]">Executive Dark</button>
-                    <button id="illumioThemeBtn" type="button" onclick="applyTheme('illumio')" class="theme-button rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em]">Illumio-Inspired</button>
+                    <button id="illumioThemeBtn" type="button" onclick="applyTheme('illumio')" class="theme-button rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em]">Illumio Dark</button>
+                    <button id="illumioLightThemeBtn" type="button" onclick="applyTheme('illumio-light')" class="theme-button rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em]">Illumio Light</button>
                 </div>
                 <a href="/" class="rounded-lg px-4 py-2 text-sm font-semibold panel-soft">Back to Extractor</a>
                 <a href="/summary" class="rounded-lg px-4 py-2 text-sm font-semibold panel-soft">Detailed Analytics</a>
@@ -280,6 +313,7 @@
             localStorage.setItem('ittExecutiveTheme', theme);
             document.getElementById('defaultThemeBtn').classList.toggle('active', theme === 'default');
             document.getElementById('illumioThemeBtn').classList.toggle('active', theme === 'illumio');
+            document.getElementById('illumioLightThemeBtn').classList.toggle('active', theme === 'illumio-light');
         }
 
         function loadSavedTheme() {

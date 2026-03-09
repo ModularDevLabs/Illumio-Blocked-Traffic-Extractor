@@ -34,7 +34,7 @@ To provide a stable, cross-platform standalone tool that extracts a user-selecte
 - **Executive Route:** `/executive-summary`
 - **In-Memory Analytics:** After a successful fetch, the backend derives analytics state from the aggregated flow set.
 - **Views:** Port/protocol summary, environment cross-talk, app-to-app matrix, heatmaps, top talkers, external/unmanaged summaries, and a separate executive-summary page.
-- **Presentation Themes:** The executive page supports multiple visual themes, including an Illumio-inspired palette, without changing the underlying analytics dataset.
+- **Presentation Themes:** The executive page supports multiple visual themes, including Illumio-inspired dark and light palettes, without changing the underlying analytics dataset.
 - **CSV Re-Import:** Previously generated CSV files from this tool can be uploaded to rebuild the analytics dashboard without rerunning the query.
 
 ## 4. CSV Schema

@@ -79,7 +79,7 @@ This page is intended for leadership or slide-friendly review and highlights:
 -   environment scorecards
 
 It uses the same underlying analytics dataset as `/summary`, but presents it in a simpler executive format.
-It also includes a theme toggle so you can switch between the default executive-dark styling and an Illumio-inspired palette.
+It also includes a theme toggle so you can switch between the default executive-dark styling, an Illumio-inspired dark palette, and a lighter Illumio-style palette with white, orange, and tan tones.
 
 ## 8. CSV Re-Import
 The analytics page can rebuild its visuals from a previously exported CSV from this tool.
