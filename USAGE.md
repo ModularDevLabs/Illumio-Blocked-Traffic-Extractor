@@ -4,6 +4,7 @@
 1.  Launch the executable (`IllumioTrafficTool_Linux`, `.exe`, or `_MacOS`).
 2.  By default, your browser will automatically open to `http://localhost:8080`.
 3.  Ensure the tool remains running in the background while you use the web interface.
+4.  Use the theme toggle in the UI to switch between `Dark`, `Illumio Dark`, and `Illumio Light`. The app remembers the selected theme across pages.
 
 ## 2. Hosting Options
 The tool can run either as a local desktop app or as a centrally hosted web app.
@@ -79,7 +80,7 @@ This page is intended for leadership or slide-friendly review and highlights:
 -   environment scorecards
 
 It uses the same underlying analytics dataset as `/summary`, but presents it in a simpler executive format.
-It also includes a theme toggle so you can switch between the default executive-dark styling, an Illumio-inspired dark palette, and a lighter Illumio-style palette with white, orange, and tan tones.
+It also includes the shared app theme toggle so you can switch between `Dark`, `Illumio Dark`, and `Illumio Light`.
 
 ## 8. CSV Re-Import
 The analytics page can rebuild its visuals from a previously exported CSV from this tool.

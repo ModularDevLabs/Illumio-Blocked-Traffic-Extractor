@@ -7,40 +7,104 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
-        body { font-family: 'Inter', sans-serif; }
+        :root {
+            --bg: #030712;
+            --panel: #111827;
+            --panel-soft: rgba(17, 24, 39, 0.82);
+            --border: rgba(255, 255, 255, 0.08);
+            --text: #f3f4f6;
+            --muted: #9ca3af;
+            --title: #22d3ee;
+            --accent: #10b981;
+            --accent-strong: #059669;
+            --secondary: #d946ef;
+            --warning: #fbbf24;
+        }
+        body[data-theme="illumio"] {
+            --bg: #0f172a;
+            --panel: #111827;
+            --panel-soft: rgba(17, 24, 39, 0.82);
+            --border: rgba(249, 115, 22, 0.22);
+            --text: #f8fafc;
+            --muted: #cbd5e1;
+            --title: #f97316;
+            --accent: #f97316;
+            --accent-strong: #dc2626;
+            --secondary: #fb7185;
+            --warning: #facc15;
+        }
+        body[data-theme="illumio-light"] {
+            --bg: #faf7f2;
+            --panel: rgba(255,255,255,0.95);
+            --panel-soft: rgba(255, 250, 243, 0.92);
+            --border: rgba(234, 88, 12, 0.18);
+            --text: #2f1f17;
+            --muted: #8a7667;
+            --title: #ea580c;
+            --accent: #f97316;
+            --accent-strong: #ea580c;
+            --secondary: #c97d44;
+            --warning: #d4a373;
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(180deg, var(--bg), color-mix(in srgb, var(--bg) 84%, black));
+            color: var(--text);
+        }
+        .panel { background: var(--panel) !important; border-color: var(--border) !important; color: var(--text); }
+        .panel-soft { background: var(--panel-soft) !important; border-color: var(--border) !important; color: var(--text); }
+        .theme-button { border: 1px solid var(--border); background: var(--panel-soft); color: var(--muted); }
+        .theme-button.active { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--text); border-color: var(--accent); }
+        .muted { color: var(--muted) !important; }
+        .title { color: var(--title) !important; }
+        .accent { color: var(--accent) !important; }
+        .secondary { color: var(--secondary) !important; }
+        .warning { color: var(--warning) !important; }
+        [class*="bg-gray-900"], [class*="bg-gray-800"] { background: var(--panel) !important; }
+        [class*="border-gray-800"] { border-color: var(--border) !important; }
+        [class*="text-gray-500"], [class*="text-gray-400"], [class*="text-gray-300"], [class*="text-gray-200"] { color: var(--muted) !important; }
+        [class*="text-cyan-400"], [class*="text-cyan-300"], [class*="text-sky-300"] { color: var(--title) !important; }
+        [class*="text-emerald-400"], [class*="text-emerald-300"] { color: var(--accent) !important; }
+        [class*="text-fuchsia-300"], [class*="text-violet-300"], [class*="text-violet-200"], [class*="text-fuchsia-200"] { color: var(--secondary) !important; }
+        [class*="text-amber-300"], [class*="text-amber-200"] { color: var(--warning) !important; }
     </style>
 </head>
-<body class="min-h-screen bg-gray-950 text-gray-100 p-6 md:p-10">
+<body data-theme="default" class="min-h-screen p-6 md:p-10">
     <div class="mx-auto max-w-7xl">
         <div class="mb-8 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
             <div>
-                <p class="mb-2 text-xs uppercase tracking-[0.35em] text-cyan-400">Post-Fetch Analytics</p>
+                <p class="title mb-2 text-xs uppercase tracking-[0.35em]">Post-Fetch Analytics</p>
                 <h1 class="text-3xl font-bold md:text-4xl">Traffic Dashboard</h1>
-                <p id="fileLabel" class="mt-2 text-sm text-gray-400">Loading latest results...</p>
+                <p id="fileLabel" class="muted mt-2 text-sm">Loading latest results...</p>
             </div>
-            <div class="flex gap-3">
-                <a href="/" class="inline-flex items-center rounded-lg bg-gray-800 px-4 py-2 text-sm font-semibold hover:bg-gray-700">Back to Extractor</a>
-                <a href="/executive-summary" class="inline-flex items-center rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold hover:bg-emerald-600">Executive Summary</a>
-                <button onclick="loadSummary()" class="inline-flex items-center rounded-lg bg-cyan-600 px-4 py-2 text-sm font-semibold hover:bg-cyan-500">Refresh</button>
+            <div class="flex flex-wrap items-center gap-3">
+                <div class="flex rounded-xl p-1 panel-soft">
+                    <button id="defaultThemeBtn" type="button" onclick="applyTheme('default')" class="theme-button active rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em]">Dark</button>
+                    <button id="illumioThemeBtn" type="button" onclick="applyTheme('illumio')" class="theme-button rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em]">Illumio Dark</button>
+                    <button id="illumioLightThemeBtn" type="button" onclick="applyTheme('illumio-light')" class="theme-button rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em]">Illumio Light</button>
+                </div>
+                <a href="/" class="inline-flex items-center rounded-lg panel-soft px-4 py-2 text-sm font-semibold">Back to Extractor</a>
+                <a href="/executive-summary" class="inline-flex items-center rounded-lg panel-soft px-4 py-2 text-sm font-semibold">Executive Summary</a>
+                <button onclick="loadSummary()" class="inline-flex items-center rounded-lg px-4 py-2 text-sm font-semibold text-white" style="background: var(--accent-strong);">Refresh</button>
             </div>
         </div>
 
-        <div class="mb-8 rounded-2xl border border-gray-800 bg-gray-900 p-4">
+        <div class="mb-8 rounded-2xl border panel p-4">
             <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
-                    <h2 class="text-sm font-semibold text-gray-200">Import Existing CSV</h2>
-                    <p class="mt-1 text-xs text-gray-500">Load a previously exported traffic CSV to rebuild this dashboard without rerunning a fetch.</p>
+                    <h2 class="text-sm font-semibold">Import Existing CSV</h2>
+                    <p class="muted mt-1 text-xs">Load a previously exported traffic CSV to rebuild this dashboard without rerunning a fetch.</p>
                 </div>
                 <div class="flex flex-col gap-3 md:flex-row md:items-center">
-                    <input id="csvFile" type="file" accept=".csv,text/csv" class="text-sm text-gray-400 file:mr-4 file:rounded-lg file:border-0 file:bg-gray-800 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-gray-200 hover:file:bg-gray-700">
-                    <button onclick="importCSV()" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold hover:bg-emerald-500">Import CSV</button>
+                    <input id="csvFile" type="file" accept=".csv,text/csv" class="muted text-sm file:mr-4 file:rounded-lg file:border-0 file:px-4 file:py-2 file:text-sm file:font-semibold">
+                    <button onclick="importCSV()" class="rounded-lg px-4 py-2 text-sm font-semibold text-white" style="background: var(--accent-strong);">Import CSV</button>
                 </div>
             </div>
         </div>
 
-        <div id="emptyState" class="hidden rounded-2xl border border-gray-800 bg-gray-900/80 p-8 text-center">
-            <p class="text-lg font-semibold text-gray-200">No analytics are available yet.</p>
-            <p class="mt-2 text-sm text-gray-400">Run a fetch from the main page first. The latest successful run will appear here.</p>
+        <div id="emptyState" class="hidden rounded-2xl border panel-soft p-8 text-center">
+            <p class="text-lg font-semibold">No analytics are available yet.</p>
+            <p class="muted mt-2 text-sm">Run a fetch from the main page first. The latest successful run will appear here.</p>
         </div>
 
         <div id="dashboard" class="hidden space-y-8">
@@ -194,6 +258,18 @@
     </div>
 
     <script>
+        function applyTheme(theme) {
+            document.body.dataset.theme = theme;
+            localStorage.setItem('ittTheme', theme);
+            document.getElementById('defaultThemeBtn').classList.toggle('active', theme === 'default');
+            document.getElementById('illumioThemeBtn').classList.toggle('active', theme === 'illumio');
+            document.getElementById('illumioLightThemeBtn').classList.toggle('active', theme === 'illumio-light');
+        }
+
+        function loadSavedTheme() {
+            applyTheme(localStorage.getItem('ittTheme') || 'default');
+        }
+
         function formatNumber(value) {
             return new Intl.NumberFormat().format(value || 0);
         }
@@ -457,7 +533,10 @@
             }
         }
 
-        window.onload = loadSummary;
+        window.onload = () => {
+            loadSavedTheme();
+            loadSummary();
+        };
     </script>
 </body>
 </html>

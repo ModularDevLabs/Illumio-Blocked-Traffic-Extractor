@@ -7,10 +7,129 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap');
-        body { font-family: 'Inter', sans-serif; }
+        :root {
+            --bg: #111827;
+            --shell: #1f2937;
+            --panel: #374151;
+            --panel-soft: rgba(17, 24, 39, 0.55);
+            --field: #374151;
+            --field-border: #4b5563;
+            --border: #4b5563;
+            --text: #f3f4f6;
+            --muted: #9ca3af;
+            --title: #60a5fa;
+            --accent: #10b981;
+            --accent-strong: #059669;
+            --secondary: #4f46e5;
+            --warn: #f59e0b;
+            --danger: #ef4444;
+            --link-bg: rgba(8, 47, 73, 0.45);
+            --link-border: rgba(14, 116, 144, 0.75);
+        }
+        body[data-theme="illumio"] {
+            --bg: #0f172a;
+            --shell: #111827;
+            --panel: #1f2937;
+            --panel-soft: rgba(17, 24, 39, 0.68);
+            --field: #111827;
+            --field-border: rgba(249, 115, 22, 0.3);
+            --border: rgba(249, 115, 22, 0.25);
+            --text: #f8fafc;
+            --muted: #cbd5e1;
+            --title: #f97316;
+            --accent: #f97316;
+            --accent-strong: #dc2626;
+            --secondary: #fb7185;
+            --warn: #facc15;
+            --danger: #ef4444;
+            --link-bg: rgba(124, 45, 18, 0.22);
+            --link-border: rgba(249, 115, 22, 0.45);
+        }
+        body[data-theme="illumio-light"] {
+            --bg: #faf7f2;
+            --shell: rgba(255, 255, 255, 0.96);
+            --panel: rgba(255, 250, 243, 0.98);
+            --panel-soft: rgba(248, 241, 231, 0.75);
+            --field: #fffaf3;
+            --field-border: rgba(234, 88, 12, 0.18);
+            --border: rgba(234, 88, 12, 0.16);
+            --text: #2f1f17;
+            --muted: #8a7667;
+            --title: #ea580c;
+            --accent: #f97316;
+            --accent-strong: #ea580c;
+            --secondary: #c97d44;
+            --warn: #d4a373;
+            --danger: #dc2626;
+            --link-bg: rgba(255, 247, 237, 0.92);
+            --link-border: rgba(234, 88, 12, 0.24);
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(180deg, var(--bg), color-mix(in srgb, var(--bg) 82%, black));
+            color: var(--text);
+            transition: background 200ms ease, color 200ms ease;
+        }
+        #appShell {
+            background: var(--shell);
+            border-color: var(--border) !important;
+            color: var(--text);
+        }
+        #appShell input, #appShell select {
+            background: var(--field) !important;
+            border-color: var(--field-border) !important;
+            color: var(--text) !important;
+        }
+        #appShell input::placeholder {
+            color: var(--muted);
+        }
+        #appShell hr {
+            border-color: var(--border) !important;
+        }
+        .theme-button {
+            border: 1px solid var(--border);
+            background: var(--panel-soft);
+            color: var(--muted);
+        }
+        .theme-button.active {
+            background: color-mix(in srgb, var(--accent) 14%, transparent);
+            color: var(--text);
+            border-color: var(--accent);
+        }
+        .themed-panel {
+            background: var(--panel);
+            border-color: var(--border) !important;
+        }
+        .themed-soft-panel {
+            background: var(--panel-soft);
+            border-color: var(--border) !important;
+        }
+        .themed-link {
+            background: var(--link-bg) !important;
+            border-color: var(--link-border) !important;
+        }
+        .themed-title {
+            color: var(--title) !important;
+        }
+        .themed-muted {
+            color: var(--muted) !important;
+        }
+        #appShell [class*="bg-gray-700"], #appShell [class*="bg-gray-800"], #appShell [class*="bg-gray-900"], #appShell [class*="bg-black"] {
+            background: var(--panel) !important;
+        }
+        #appShell [class*="border-gray-600"], #appShell [class*="border-gray-700"] {
+            border-color: var(--border) !important;
+        }
+        #appShell [class*="text-gray-300"], #appShell [class*="text-gray-400"], #appShell [class*="text-gray-500"] {
+            color: var(--muted) !important;
+        }
+        #appShell #startBtn { background: var(--accent) !important; border-color: color-mix(in srgb, var(--accent-strong) 80%, black) !important; }
+        #appShell #discoverBtn { background: var(--secondary) !important; border-color: color-mix(in srgb, var(--secondary) 80%, black) !important; }
+        #appShell #testBtn, #appShell .theme-button + button, #appShell button[class*="bg-gray-600"] { background: var(--panel) !important; color: var(--text) !important; border-color: var(--border) !important; }
+        #appShell #cancelBtn, #appShell button[class*="bg-red-600"] { background: var(--danger) !important; }
         .autocomplete-items {
             position: absolute;
-            border: 1px solid #4b5563;
+            border: 1px solid var(--field-border);
             border-bottom: none;
             border-top: none;
             z-index: 99;
@@ -23,22 +142,28 @@
         .autocomplete-items div {
             padding: 8px;
             cursor: pointer;
-            background-color: #374151;
-            border-bottom: 1px solid #4b5563;
+            background-color: var(--field);
+            border-bottom: 1px solid var(--field-border);
+            color: var(--text);
         }
-        .autocomplete-items div:hover { background-color: #4b5563; }
-        .autocomplete-active { background-color: #2563eb !important; }
+        .autocomplete-items div:hover { background-color: color-mix(in srgb, var(--field) 78%, white); }
+        .autocomplete-active { background-color: color-mix(in srgb, var(--secondary) 72%, white) !important; }
     </style>
 </head>
-<body class="bg-gray-900 text-gray-100 min-h-screen p-8">
-    <div class="max-w-4xl mx-auto bg-gray-800 p-8 rounded-xl shadow-2xl border border-gray-700">
-        <div class="mb-8">
-            <h1 class="text-3xl font-bold text-blue-400 text-center uppercase tracking-widest">Illumio Blocked Traffic Extractor</h1>
+<body data-theme="default" class="min-h-screen p-8">
+    <div id="appShell" class="max-w-4xl mx-auto p-8 rounded-xl shadow-2xl border">
+        <div class="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <h1 class="themed-title text-3xl font-bold text-center uppercase tracking-widest">Illumio Blocked Traffic Extractor</h1>
+            <div class="flex rounded-xl p-1 themed-soft-panel">
+                <button id="defaultThemeBtn" type="button" onclick="applyTheme('default')" class="theme-button active rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em]">Dark</button>
+                <button id="illumioThemeBtn" type="button" onclick="applyTheme('illumio')" class="theme-button rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em]">Illumio Dark</button>
+                <button id="illumioLightThemeBtn" type="button" onclick="applyTheme('illumio-light')" class="theme-button rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em]">Illumio Light</button>
+            </div>
         </div>
         
         <!-- PCE Profiles -->
-        <div class="mb-8 p-4 bg-gray-700 rounded-lg border border-gray-600">
-            <h2 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4">PCE Profiles</h2>
+        <div class="mb-8 p-4 rounded-lg border themed-panel">
+            <h2 class="text-sm font-bold themed-muted uppercase tracking-wider mb-4">PCE Profiles</h2>
             <div class="flex space-x-4 mb-4">
                 <select id="profileSelect" onchange="loadSelectedProfile()" class="flex-1 bg-gray-800 border border-gray-600 rounded p-2 outline-none">
                     <option value="">-- Select a Saved PCE --</option>
@@ -123,15 +248,15 @@
         <hr class="border-gray-700 my-8">
 
         <!-- File Settings -->
-        <div class="bg-gray-900/50 p-4 rounded-lg mb-8 border border-gray-700">
-            <h2 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4 italic text-center">Export Settings</h2>
+        <div class="themed-soft-panel p-4 rounded-lg mb-8 border">
+            <h2 class="text-sm font-bold themed-muted uppercase tracking-wider mb-4 italic text-center">Export Settings</h2>
             <div class="grid grid-cols-2 gap-4">
                 <div>
-                    <label class="block text-xs text-gray-500 mb-1 italic">Target Filename</label>
+                    <label class="block text-xs themed-muted mb-1 italic">Target Filename</label>
                     <input id="file_name" type="text" placeholder="blocked_traffic.csv" class="w-full bg-gray-800 border border-gray-700 rounded p-2 outline-none text-sm">
                 </div>
                 <div>
-                    <label class="block text-xs text-gray-500 mb-1 italic">Target Folder (Absolute path)</label>
+                    <label class="block text-xs themed-muted mb-1 italic">Target Folder (Absolute path)</label>
                     <input id="save_path" type="text" placeholder="/home/user/Desktop" class="w-full bg-gray-800 border border-gray-700 rounded p-2 outline-none text-sm">
                 </div>
             </div>
@@ -144,22 +269,22 @@
         </div>
 
         <div class="mb-8 hidden grid gap-3 md:grid-cols-2" id="summaryLinkWrap">
-            <a href="/summary" id="summaryLink" class="block rounded-lg border border-cyan-700 bg-cyan-950/40 px-5 py-4 text-sm font-semibold text-cyan-300 hover:bg-cyan-900/40">
+            <a href="/summary" id="summaryLink" class="themed-link block rounded-lg border px-5 py-4 text-sm font-semibold">
                 Open Analytics Dashboard for the latest successful fetch
             </a>
-            <a href="/executive-summary" id="executiveSummaryLink" class="block rounded-lg border border-emerald-700 bg-emerald-950/40 px-5 py-4 text-sm font-semibold text-emerald-300 hover:bg-emerald-900/40">
+            <a href="/executive-summary" id="executiveSummaryLink" class="themed-link block rounded-lg border px-5 py-4 text-sm font-semibold">
                 Open Executive Summary for presentation-ready highlights
             </a>
         </div>
 
-        <div class="mb-8 rounded-lg border border-gray-700 bg-gray-900/60 p-4">
+        <div class="mb-8 rounded-lg border themed-soft-panel p-4">
             <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
-                    <h2 class="text-sm font-bold uppercase tracking-wider text-gray-300">Upload Existing CSV</h2>
-                    <p class="mt-1 text-xs text-gray-500">Import a previously exported CSV from this tool and jump directly to the analytics dashboard.</p>
+                    <h2 class="text-sm font-bold uppercase tracking-wider">Upload Existing CSV</h2>
+                    <p class="mt-1 text-xs themed-muted">Import a previously exported CSV from this tool and jump directly to the analytics dashboard.</p>
                 </div>
                 <div class="flex flex-col gap-3 md:flex-row md:items-center">
-                    <input id="mainCsvFile" type="file" accept=".csv,text/csv" class="text-sm text-gray-400 file:mr-4 file:rounded-lg file:border-0 file:bg-gray-800 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-gray-200 hover:file:bg-gray-700">
+                    <input id="mainCsvFile" type="file" accept=".csv,text/csv" class="text-sm themed-muted file:mr-4 file:rounded-lg file:border-0 file:px-4 file:py-2 file:text-sm file:font-semibold">
                     <button type="button" onclick="uploadCSVAndOpenSummary()" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold hover:bg-emerald-500">
                         Upload CSV
                     </button>
@@ -173,13 +298,13 @@
                 <span id="statusLabel" class="text-sm font-semibold text-blue-300 italic">Initializing...</span>
                 <span id="percentLabel" class="text-sm font-bold text-blue-400">0%</span>
             </div>
-            <div class="w-full bg-gray-700 rounded-full h-4 mb-8 overflow-hidden">
+            <div class="w-full themed-panel rounded-full h-4 mb-8 overflow-hidden">
                 <div id="progressBar" class="bg-blue-500 h-full transition-all duration-300" style="width: 0%"></div>
             </div>
         </div>
 
-        <div class="bg-black rounded-lg p-4 h-64 overflow-y-auto text-xs font-mono border border-gray-700" id="logBox">
-            <div class="text-gray-500 italic">Logs will appear here...</div>
+        <div class="rounded-lg p-4 h-64 overflow-y-auto text-xs font-mono border themed-panel" id="logBox">
+            <div class="themed-muted italic">Logs will appear here...</div>
         </div>
     </div>
 
@@ -232,7 +357,22 @@
         let pceVServices = [];
         let pceVServers = [];
 
-        window.onload = fetchProfiles;
+        function applyTheme(theme) {
+            document.body.dataset.theme = theme;
+            localStorage.setItem('ittTheme', theme);
+            document.getElementById('defaultThemeBtn').classList.toggle('active', theme === 'default');
+            document.getElementById('illumioThemeBtn').classList.toggle('active', theme === 'illumio');
+            document.getElementById('illumioLightThemeBtn').classList.toggle('active', theme === 'illumio-light');
+        }
+
+        function loadSavedTheme() {
+            applyTheme(localStorage.getItem('ittTheme') || 'default');
+        }
+
+        window.onload = () => {
+            loadSavedTheme();
+            fetchProfiles();
+        };
 
         async function fetchProfiles() {
             const res = await fetch('/api/profiles/get');

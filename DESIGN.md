@@ -6,6 +6,7 @@ To provide a stable, cross-platform standalone tool that extracts a user-selecte
 ## 2. Technical Architecture
 - **Language:** Go (Golang) - Compiled to single binaries for Windows, Linux, and MacOS.
 - **UI:** Embedded Web Interface (HTML/JS/Tailwind) served via a local Go web server.
+- **Themes:** The extractor, analytics dashboard, and executive summary share a browser-persisted theme selection with `Dark`, `Illumio Dark`, and `Illumio Light` options.
 - **Hosting Model:** Runs either locally on `127.0.0.1:8080` by default or as a centrally hosted web service via configurable host/port flags and env vars.
 - **Portability:** 100% Go implementation (no CGO) to ensure flawless cross-compilation from a single build environment.
 - **Persistence:** Local JSON file (`pce_profiles.json`) stores PCE credentials and query configurations.
@@ -34,7 +35,7 @@ To provide a stable, cross-platform standalone tool that extracts a user-selecte
 - **Executive Route:** `/executive-summary`
 - **In-Memory Analytics:** After a successful fetch, the backend derives analytics state from the aggregated flow set.
 - **Views:** Port/protocol summary, environment cross-talk, app-to-app matrix, heatmaps, top talkers, external/unmanaged summaries, and a separate executive-summary page.
-- **Presentation Themes:** The executive page supports multiple visual themes, including Illumio-inspired dark and light palettes, without changing the underlying analytics dataset.
+- **Presentation Themes:** The application supports shared dark and Illumio-inspired dark/light palettes without changing the underlying analytics dataset.
 - **CSV Re-Import:** Previously generated CSV files from this tool can be uploaded to rebuild the analytics dashboard without rerunning the query.
 
 ## 4. CSV Schema

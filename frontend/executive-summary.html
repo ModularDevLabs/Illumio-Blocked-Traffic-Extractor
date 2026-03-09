@@ -185,7 +185,7 @@
             </div>
             <div class="flex flex-wrap items-center gap-3">
                 <div class="flex rounded-xl p-1 panel-soft">
-                    <button id="defaultThemeBtn" type="button" onclick="applyTheme('default')" class="theme-button active rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em]">Executive Dark</button>
+                    <button id="defaultThemeBtn" type="button" onclick="applyTheme('default')" class="theme-button active rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em]">Dark</button>
                     <button id="illumioThemeBtn" type="button" onclick="applyTheme('illumio')" class="theme-button rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em]">Illumio Dark</button>
                     <button id="illumioLightThemeBtn" type="button" onclick="applyTheme('illumio-light')" class="theme-button rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em]">Illumio Light</button>
                 </div>
@@ -310,14 +310,14 @@
 
         function applyTheme(theme) {
             document.body.dataset.theme = theme;
-            localStorage.setItem('ittExecutiveTheme', theme);
+            localStorage.setItem('ittTheme', theme);
             document.getElementById('defaultThemeBtn').classList.toggle('active', theme === 'default');
             document.getElementById('illumioThemeBtn').classList.toggle('active', theme === 'illumio');
             document.getElementById('illumioLightThemeBtn').classList.toggle('active', theme === 'illumio-light');
         }
 
         function loadSavedTheme() {
-            applyTheme(localStorage.getItem('ittExecutiveTheme') || 'default');
+            applyTheme(localStorage.getItem('ittTheme') || 'default');
         }
 
         function formatNumber(value) {
