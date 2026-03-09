@@ -67,6 +67,24 @@
         [class*="text-emerald-400"], [class*="text-emerald-300"] { color: var(--accent) !important; }
         [class*="text-fuchsia-300"], [class*="text-violet-300"], [class*="text-violet-200"], [class*="text-fuchsia-200"] { color: var(--secondary) !important; }
         [class*="text-amber-300"], [class*="text-amber-200"] { color: var(--warning) !important; }
+        a.panel-soft, button.panel-soft { color: var(--text) !important; }
+        input[type="file"] { color: var(--muted) !important; }
+        input[type="file"]::file-selector-button {
+            background: var(--panel) !important;
+            color: var(--text) !important;
+        }
+        body[data-theme="illumio-light"] th,
+        body[data-theme="illumio-light"] td,
+        body[data-theme="illumio-light"] .text-sm,
+        body[data-theme="illumio-light"] .text-xs {
+            color: inherit;
+        }
+        body[data-theme="illumio-light"] [class*="text-gray-500"],
+        body[data-theme="illumio-light"] [class*="text-gray-400"],
+        body[data-theme="illumio-light"] [class*="text-gray-300"],
+        body[data-theme="illumio-light"] [class*="text-gray-200"] {
+            color: var(--muted) !important;
+        }
     </style>
 </head>
 <body data-theme="default" class="min-h-screen p-6 md:p-10">
