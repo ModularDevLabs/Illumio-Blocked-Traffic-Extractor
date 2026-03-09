@@ -18,6 +18,7 @@ To provide a stable, cross-platform standalone tool that extracts a user-selecte
 - **Collection Strategy:** Uses Illumio asynchronous GET collection jobs for discovery collections so larger PCEs are not truncated at the default 500-object response limit.
 - **Concurrency Model:** Runs discovery collection fetches with a bounded worker pool (3 concurrent collection jobs) to reduce wall-clock load time without fully flooding the PCE.
 - **Cache Reuse:** Extraction reuses the last successful discovery cache for the same PCE credential set so fetches can start without reloading the full policy-object inventory.
+- **Operator Feedback:** Discovery progress is streamed into the main-page log window so long-running large-PCE collection loads remain visible to the user.
 - **Automation:** Populates a live-search/autocomplete cache in the browser memory to prevent user typos and ensure query validity.
 
 ### 3.2. Traffic Extraction Engine
@@ -26,6 +27,7 @@ To provide a stable, cross-platform standalone tool that extracts a user-selecte
 - **PCE Schema Compliance:** Ensures all mandatory fields (`query_name`, `services`, `exclude`) are present in every request to prevent HTTP 406 errors.
 - **Resilience:** Automatic 60-second cooldown on HTTP 429 (Rate Limit) and recursive retries for failed chunks.
 - **Service Filtering:** Supports both Illumio service references and direct protocol/port filters such as `TCP:445` and `UDP:5355`.
+- **Selector Hardening:** Unknown source, destination, and exclusion values are only treated as IP filters when they parse as valid IP/CIDR values; otherwise they are skipped and logged as warnings.
 
 ### 3.3. Data Aggregation & Deduplication
 - **Unique Connections:** The tool treats a unique tuple of (Src IP, Dst IP, Port, Protocol, and all Labels) as a single "Unique Connection."

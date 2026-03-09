@@ -39,6 +39,7 @@ Discovery notes:
 -   Discovery now runs up to 3 collection jobs in parallel to reduce wait time on larger PCEs.
 -   On large environments, discovery may still take longer because the PCE prepares full collection results before the UI autocomplete cache is populated.
 -   The extractor reuses the most recently loaded discovery cache for the same PCE credentials so a fetch does not need to reload the full object inventory again.
+-   Discovery progress is shown in the main-page log window so you can see each object type load as it completes.
 
 ## 4. Running an Extraction
 1.  **Select/Enter Credentials:** Ensure the PCE details are correct.
@@ -48,6 +49,7 @@ Discovery notes:
     -   **Add Risky Services:** Click this button to append the Illumio ransomware risky-services set to the Services field. Entries marked `TCP/UDP` are added as separate filters.
     - **Exclusions:** Enter labels or IPs you wish to exclude from either the Source or Destination side.
     - **Days To Fetch:** Choose how many days of blocked traffic to query. The default is 90.
+    - **Unknown selectors:** If a source, destination, or exclusion value does not match a discovered object and is not a valid IP or CIDR, it will be skipped and logged as a warning instead of being sent to the PCE as an invalid IP.
 3.  **Configure Export:**
     -   **Target Filename:** Choose a name for your CSV (e.g., `march_report.csv`).
     -   **Target Folder:** Enter the **absolute path** to the folder where the file should be saved (e.g., `C:\Users\Admin\Desktop` or `/home/user/Downloads`).
@@ -57,6 +59,7 @@ Discovery notes:
 -   **Progress Bar:** Shows the percentage of the requested time window completed.
 -   **Status Label:** Displays how many days have been processed and the total flow count gathered so far.
 -   **Log Box:** Provides a detailed, real-time feed of API interactions and errors.
+-   **Discovery Progress:** When loading policy objects, the log box shows staged progress for labels, services, IP lists, and other discovery collections.
 -   **Cancel Button:** Use this to stop the extraction immediately. **Note:** If you cancel, the partial data will not be saved to ensure CSV integrity.
 
 ## 6. Analytics Dashboard
