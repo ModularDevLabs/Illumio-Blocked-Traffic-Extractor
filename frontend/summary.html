@@ -529,14 +529,14 @@
                     protocolGrandTotal += entry.totalFlows;
                 });
 
-                html += `<tr class="bg-gray-900/70 font-semibold text-white"><td class="px-4 py-3">${escapeHtml(protocol)}</td><td class="px-4 py-3"></td>`;
+                html += `<tr class="bg-gray-900/70 font-semibold" style="color: var(--text);"><td class="px-4 py-3">${escapeHtml(protocol)}</td><td class="px-4 py-3"></td>`;
                 destinationOrder.forEach((destination) => {
                     html += `<td class="px-4 py-3">${formatNumber(protocolTotals[destination] || 0)}</td>`;
                 });
                 html += `<td class="px-4 py-3">${formatNumber(protocolGrandTotal)}</td></tr>`;
 
                 portEntries.forEach((entry) => {
-                    html += `<tr class="hover:bg-gray-800/60"><td class="px-4 py-3"></td><td class="px-4 py-3 font-medium text-gray-100">${formatNumber(entry.port)}</td>`;
+                    html += `<tr class="hover:bg-gray-800/60"><td class="px-4 py-3"></td><td class="px-4 py-3 font-medium" style="color: var(--text);">${formatNumber(entry.port)}</td>`;
                     destinationOrder.forEach((destination) => {
                         html += `<td class="px-4 py-3">${formatNumber(entry.flowsByDestination[destination] || 0)}</td>`;
                     });
@@ -548,7 +548,7 @@
             filteredRows.forEach((row) => {
                 destinationTotals[row.destination_env] = (destinationTotals[row.destination_env] || 0) + (row.flow_count || 0);
             });
-            html += '<tr class="bg-gray-900/90 font-bold text-white"><td class="px-4 py-3" colspan="2">Grand Total</td>';
+            html += '<tr class="bg-gray-900/90 font-bold" style="color: var(--text);"><td class="px-4 py-3" colspan="2">Grand Total</td>';
             destinationOrder.forEach((destination) => {
                 html += `<td class="px-4 py-3">${formatNumber(destinationTotals[destination] || 0)}</td>`;
             });
