@@ -325,7 +325,7 @@
                 .replaceAll("'", '&#39;');
         }
 
-        function renderCheckboxFilter(containerId, items, stateKey, placeholder) {
+        function renderCheckboxFilter(containerId, items, stateKey, placeholder, options = {}) {
             const container = document.getElementById(containerId);
             const selectedValues = filterState[stateKey] || new Set();
             const countLabel = selectedValues.size === 0 ? placeholder : `${selectedValues.size} selected`;
@@ -351,6 +351,7 @@
             const menu = root.querySelector('[data-filter-menu]');
             const search = root.querySelector('[data-filter-search]');
             const optionsWrap = root.querySelector('[data-filter-options]');
+            const preservedSearch = options.searchTerm || '';
 
             function renderOptions(searchTerm = '') {
                 const term = searchTerm.trim().toLowerCase();
@@ -374,7 +375,7 @@
                         if (checkbox.checked) selectedValues.add(value);
                         else selectedValues.delete(value);
                         filterState[stateKey] = selectedValues;
-                        renderCheckboxFilter(containerId, items, stateKey, placeholder);
+                        renderCheckboxFilter(containerId, items, stateKey, placeholder, { keepOpen: true, searchTerm: search.value });
                         runFiltersForState(stateKey);
                     });
                 });
@@ -392,19 +393,25 @@
             root.querySelector('[data-filter-select-all]').addEventListener('click', () => {
                 items.forEach((item) => selectedValues.add(item));
                 filterState[stateKey] = selectedValues;
-                renderCheckboxFilter(containerId, items, stateKey, placeholder);
+                renderCheckboxFilter(containerId, items, stateKey, placeholder, { keepOpen: true, searchTerm: search.value });
                 runFiltersForState(stateKey);
             });
 
             root.querySelector('[data-filter-clear]').addEventListener('click', () => {
                 selectedValues.clear();
                 filterState[stateKey] = selectedValues;
-                renderCheckboxFilter(containerId, items, stateKey, placeholder);
+                renderCheckboxFilter(containerId, items, stateKey, placeholder, { keepOpen: true, searchTerm: search.value });
                 runFiltersForState(stateKey);
             });
 
             search.addEventListener('input', () => renderOptions(search.value));
-            renderOptions();
+            search.value = preservedSearch;
+            renderOptions(preservedSearch);
+            if (options.keepOpen) {
+                menu.classList.remove('hidden');
+                search.focus();
+                search.setSelectionRange(search.value.length, search.value.length);
+            }
         }
 
         document.addEventListener('click', (event) => {
