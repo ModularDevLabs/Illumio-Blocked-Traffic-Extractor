@@ -69,6 +69,7 @@ After a successful fetch, use the link on the main page to open `/summary`.
 
 Available analytics views:
 -   Port / protocol summary
+-   Environment service pivot table with multi-select source-environment filtering
 -   Environment cross-talk matrix
 -   App-to-app matrix
 -   Heatmap-style environment and app matrices
@@ -77,6 +78,7 @@ Available analytics views:
 
 Notes:
 -   Each major section on `/summary` can be collapsed or expanded independently. The page remembers your section state in the browser.
+-   The environment service pivot lets you select one or more source environments and see destination-environment flow totals broken out by protocol and port.
 -   Heatmaps exclude the `External/Unmanaged` bucket by default so labeled relationships are easier to read.
 -   Labeled unmanaged endpoints are grouped by their actual labels where possible.
 

@@ -88,6 +88,15 @@ type TrafficCategorySummary struct {
 	UniqueConnections int    `json:"unique_connections"`
 }
 
+type EnvServicePivotSummary struct {
+	SourceEnv         string `json:"source_env"`
+	DestinationEnv    string `json:"destination_env"`
+	Protocol          string `json:"protocol"`
+	Port              int    `json:"port"`
+	FlowCount         int    `json:"flow_count"`
+	UniqueConnections int    `json:"unique_connections"`
+}
+
 type AnalyticsInsights struct {
 	EnvMatrix          []MatrixSummary          `json:"env_matrix"`
 	AppMatrix          []MatrixSummary          `json:"app_matrix"`
@@ -97,6 +106,8 @@ type AnalyticsInsights struct {
 	TopDestinationIPs  []TalkerSummary          `json:"top_destination_ips"`
 	TopAppPairs        []TalkerSummary          `json:"top_app_pairs"`
 	TrafficCategories  []TrafficCategorySummary `json:"traffic_categories"`
+	EnvServicePivot    []EnvServicePivotSummary `json:"env_service_pivot"`
+	SourceEnvOptions   []string                 `json:"source_env_options"`
 }
 
 type AnalyticsRecord struct {
@@ -109,6 +120,8 @@ type AnalyticsRecord struct {
 	DstFQDN    string
 	SrcManaged bool
 	DstManaged bool
+	Protocol   string
+	Port       int
 	FlowCount  int
 }
 
@@ -713,6 +726,8 @@ func parseCSVAnalytics(reader io.Reader) ([]PortProtocolSummary, AnalyticsInsigh
 			DstIP:      dstEndpoint,
 			SrcManaged: srcEnv != "External/Unmanaged" || srcApp != "External/Unmanaged",
 			DstManaged: dstEnv != "External/Unmanaged" || dstApp != "External/Unmanaged",
+			Protocol:   protocol,
+			Port:       port,
 			FlowCount:  flowCount,
 		})
 	}
@@ -1143,8 +1158,12 @@ func buildInsights(records []AnalyticsRecord) AnalyticsInsights {
 	topDestinationIPMap := make(map[string]TalkerSummary)
 	topAppPairMap := make(map[string]TalkerSummary)
 	categoryMap := make(map[string]TrafficCategorySummary)
+	envServicePivotMap := make(map[string]EnvServicePivotSummary)
+	sourceEnvSet := make(map[string]bool)
 
 	for _, record := range records {
+		sourceEnvSet[record.SrcEnv] = true
+
 		envKey := record.SrcEnv + "->" + record.DstEnv
 		envEntry := envMatrixMap[envKey]
 		envEntry.Source = record.SrcEnv
@@ -1207,7 +1226,43 @@ func buildInsights(records []AnalyticsRecord) AnalyticsInsights {
 		categoryEntry.FlowCount += record.FlowCount
 		categoryEntry.UniqueConnections++
 		categoryMap[categoryName] = categoryEntry
+
+		pivotKey := fmt.Sprintf("%s|%s|%s|%d", record.SrcEnv, record.DstEnv, record.Protocol, record.Port)
+		pivotEntry := envServicePivotMap[pivotKey]
+		pivotEntry.SourceEnv = record.SrcEnv
+		pivotEntry.DestinationEnv = record.DstEnv
+		pivotEntry.Protocol = record.Protocol
+		pivotEntry.Port = record.Port
+		pivotEntry.FlowCount += record.FlowCount
+		pivotEntry.UniqueConnections++
+		envServicePivotMap[pivotKey] = pivotEntry
 	}
+
+	envServicePivot := make([]EnvServicePivotSummary, 0, len(envServicePivotMap))
+	for _, item := range envServicePivotMap {
+		envServicePivot = append(envServicePivot, item)
+	}
+	sort.Slice(envServicePivot, func(i, j int) bool {
+		if envServicePivot[i].SourceEnv != envServicePivot[j].SourceEnv {
+			return envServicePivot[i].SourceEnv < envServicePivot[j].SourceEnv
+		}
+		if envServicePivot[i].Protocol != envServicePivot[j].Protocol {
+			return envServicePivot[i].Protocol < envServicePivot[j].Protocol
+		}
+		if envServicePivot[i].Port != envServicePivot[j].Port {
+			return envServicePivot[i].Port < envServicePivot[j].Port
+		}
+		if envServicePivot[i].FlowCount != envServicePivot[j].FlowCount {
+			return envServicePivot[i].FlowCount > envServicePivot[j].FlowCount
+		}
+		return envServicePivot[i].DestinationEnv < envServicePivot[j].DestinationEnv
+	})
+
+	sourceEnvOptions := make([]string, 0, len(sourceEnvSet))
+	for name := range sourceEnvSet {
+		sourceEnvOptions = append(sourceEnvOptions, name)
+	}
+	sort.Strings(sourceEnvOptions)
 
 	return AnalyticsInsights{
 		EnvMatrix:          matrixFromMap(envMatrixMap),
@@ -1218,6 +1273,8 @@ func buildInsights(records []AnalyticsRecord) AnalyticsInsights {
 		TopDestinationIPs:  topTalkersFromMap(topDestinationIPMap, 12),
 		TopAppPairs:        topTalkersFromMap(topAppPairMap, 15),
 		TrafficCategories:  categoryList(categoryMap),
+		EnvServicePivot:    envServicePivot,
+		SourceEnvOptions:   sourceEnvOptions,
 	}
 }
 
@@ -1513,6 +1570,8 @@ func runExtraction(ctx context.Context, cfg Config) {
 			DstFQDN:    flow.DstFQDN,
 			SrcManaged: endpointHasClassification(flow, true),
 			DstManaged: endpointHasClassification(flow, false),
+			Protocol:   protocol,
+			Port:       flow.DstPort,
 			FlowCount:  entry.TotalCount,
 		})
 	}
