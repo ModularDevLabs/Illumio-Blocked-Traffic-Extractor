@@ -432,6 +432,13 @@
             return new Intl.NumberFormat().format(value || 0);
         }
 
+        function formatPort(value) {
+            if (value === null || value === undefined || value === '') {
+                return '0';
+            }
+            return String(value);
+        }
+
         function renderRows(targetId, rows, columns) {
             const body = document.getElementById(targetId);
             body.innerHTML = '';
@@ -619,7 +626,7 @@
                             ${monthRows.map((row) => `
                                 <tr class="hover:bg-gray-800/60">
                                     <td class="px-5 py-4 font-medium" style="color: var(--text);">${escapeHtml(row.protocol)}</td>
-                                    <td class="px-5 py-4" style="color: var(--text);">${formatNumber(row.port)}</td>
+                                    <td class="px-5 py-4" style="color: var(--text);">${formatPort(row.port)}</td>
                                     <td class="px-5 py-4 text-emerald-300">${formatNumber(row.flow_count)}</td>
                                     <td class="px-5 py-4 text-amber-200">${formatNumber(row.unique_connections)}</td>
                                 </tr>
