@@ -82,7 +82,20 @@ Notes:
 -   Heatmaps exclude the `External/Unmanaged` bucket by default so labeled relationships are easier to read.
 -   Labeled unmanaged endpoints are grouped by their actual labels where possible.
 
-## 7. Executive Summary
+## 7. Heatmap Explorer
+Use `/heatmaps` for a dedicated full-data heatmap view.
+
+This page provides:
+-   environment and application heatmap modes
+-   multi-select source and destination filters
+-   full heatmaps built from the complete analytics dataset rather than the reduced top-N dashboard view
+-   click-to-drilldown so a selected heatmap cell shows the protocol/port rows that make up that flow total
+
+Notes:
+-   `Hide Empty Rows/Cols` is enabled by default to keep large matrices readable.
+-   The drilldown panel updates based on the currently selected heatmap mode and filters.
+
+## 8. Executive Summary
 Use `/executive-summary` for a presentation-ready view of the currently loaded dataset.
 
 This page is intended for leadership or slide-friendly review and highlights:
@@ -96,7 +109,7 @@ This page is intended for leadership or slide-friendly review and highlights:
 It uses the same underlying analytics dataset as `/summary`, but presents it in a simpler executive format.
 It also includes the shared app theme toggle so you can switch between `Dark`, `Illumio Dark`, and `Illumio Light`.
 
-## 8. CSV Re-Import
+## 9. CSV Re-Import
 The analytics page can rebuild its visuals from a previously exported CSV from this tool.
 
 1.  Open `/summary`.
@@ -115,7 +128,7 @@ Notes:
 -   This is useful if the app was restarted or the original in-memory analytics state is no longer present.
 -   After import, `/summary` now forces a fresh analytics reload so the imported dataset appears immediately instead of reusing an older empty-state response.
 
-## 9. Validation and Smoke Testing
+## 10. Validation and Smoke Testing
 Two test layers are available:
 
 -   `go test ./...`
@@ -136,10 +149,11 @@ The live smoke test validates:
 -   discovery calls
 -   Explorer acceptance of direct service filters like `TCP:445` and `UDP:5355`
 
-## 10. Troubleshooting
+## 11. Troubleshooting
 -   **HTTP 401/403:** Your API Key or Secret is incorrect, or the user does not have permission to run traffic queries.
 -   **HTTP 404:** The PCE URL or Org ID is incorrect.
 -   **Connection Refused:** Ensure your machine has network access to the PCE URL provided.
 -   **Remote Users Cannot Reach the App:** Ensure you started the tool with `-host 0.0.0.0` or another reachable interface, and that the server firewall/security group allows the selected port.
 -   **0 Flows Found:** Verify your label names. Labels must match the exact case and spelling used in the PCE.
+-   **Heatmap looks too large:** Use the source and destination filters or leave `Hide Empty Rows/Cols` enabled.
 -   **Live smoke test cannot connect:** Ensure the host running the test has network access to the PCE and that the selected profile in `pce_profiles.json` is still valid.

@@ -97,6 +97,15 @@ type EnvServicePivotSummary struct {
 	UniqueConnections int    `json:"unique_connections"`
 }
 
+type AppServicePivotSummary struct {
+	SourceApp         string `json:"source_app"`
+	DestinationApp    string `json:"destination_app"`
+	Protocol          string `json:"protocol"`
+	Port              int    `json:"port"`
+	FlowCount         int    `json:"flow_count"`
+	UniqueConnections int    `json:"unique_connections"`
+}
+
 type AnalyticsInsights struct {
 	EnvMatrix          []MatrixSummary          `json:"env_matrix"`
 	AppMatrix          []MatrixSummary          `json:"app_matrix"`
@@ -108,6 +117,8 @@ type AnalyticsInsights struct {
 	TrafficCategories  []TrafficCategorySummary `json:"traffic_categories"`
 	EnvServicePivot    []EnvServicePivotSummary `json:"env_service_pivot"`
 	SourceEnvOptions   []string                 `json:"source_env_options"`
+	AppServicePivot    []AppServicePivotSummary `json:"app_service_pivot"`
+	SourceAppOptions   []string                 `json:"source_app_options"`
 }
 
 type AnalyticsRecord struct {
@@ -381,6 +392,11 @@ func main() {
 	})
 	http.HandleFunc("/executive-summary", func(w http.ResponseWriter, r *http.Request) {
 		data, _ := staticFiles.ReadFile("frontend/executive-summary.html")
+		w.Header().Set("Content-Type", "text/html")
+		w.Write(data)
+	})
+	http.HandleFunc("/heatmaps", func(w http.ResponseWriter, r *http.Request) {
+		data, _ := staticFiles.ReadFile("frontend/heatmaps.html")
 		w.Header().Set("Content-Type", "text/html")
 		w.Write(data)
 	})
@@ -1159,10 +1175,13 @@ func buildInsights(records []AnalyticsRecord) AnalyticsInsights {
 	topAppPairMap := make(map[string]TalkerSummary)
 	categoryMap := make(map[string]TrafficCategorySummary)
 	envServicePivotMap := make(map[string]EnvServicePivotSummary)
+	appServicePivotMap := make(map[string]AppServicePivotSummary)
 	sourceEnvSet := make(map[string]bool)
+	sourceAppSet := make(map[string]bool)
 
 	for _, record := range records {
 		sourceEnvSet[record.SrcEnv] = true
+		sourceAppSet[record.SrcApp] = true
 
 		envKey := record.SrcEnv + "->" + record.DstEnv
 		envEntry := envMatrixMap[envKey]
@@ -1236,6 +1255,16 @@ func buildInsights(records []AnalyticsRecord) AnalyticsInsights {
 		pivotEntry.FlowCount += record.FlowCount
 		pivotEntry.UniqueConnections++
 		envServicePivotMap[pivotKey] = pivotEntry
+
+		appPivotKey := fmt.Sprintf("%s|%s|%s|%d", record.SrcApp, record.DstApp, record.Protocol, record.Port)
+		appPivotEntry := appServicePivotMap[appPivotKey]
+		appPivotEntry.SourceApp = record.SrcApp
+		appPivotEntry.DestinationApp = record.DstApp
+		appPivotEntry.Protocol = record.Protocol
+		appPivotEntry.Port = record.Port
+		appPivotEntry.FlowCount += record.FlowCount
+		appPivotEntry.UniqueConnections++
+		appServicePivotMap[appPivotKey] = appPivotEntry
 	}
 
 	envServicePivot := make([]EnvServicePivotSummary, 0, len(envServicePivotMap))
@@ -1264,6 +1293,32 @@ func buildInsights(records []AnalyticsRecord) AnalyticsInsights {
 	}
 	sort.Strings(sourceEnvOptions)
 
+	appServicePivot := make([]AppServicePivotSummary, 0, len(appServicePivotMap))
+	for _, item := range appServicePivotMap {
+		appServicePivot = append(appServicePivot, item)
+	}
+	sort.Slice(appServicePivot, func(i, j int) bool {
+		if appServicePivot[i].SourceApp != appServicePivot[j].SourceApp {
+			return appServicePivot[i].SourceApp < appServicePivot[j].SourceApp
+		}
+		if appServicePivot[i].Protocol != appServicePivot[j].Protocol {
+			return appServicePivot[i].Protocol < appServicePivot[j].Protocol
+		}
+		if appServicePivot[i].Port != appServicePivot[j].Port {
+			return appServicePivot[i].Port < appServicePivot[j].Port
+		}
+		if appServicePivot[i].FlowCount != appServicePivot[j].FlowCount {
+			return appServicePivot[i].FlowCount > appServicePivot[j].FlowCount
+		}
+		return appServicePivot[i].DestinationApp < appServicePivot[j].DestinationApp
+	})
+
+	sourceAppOptions := make([]string, 0, len(sourceAppSet))
+	for name := range sourceAppSet {
+		sourceAppOptions = append(sourceAppOptions, name)
+	}
+	sort.Strings(sourceAppOptions)
+
 	return AnalyticsInsights{
 		EnvMatrix:          matrixFromMap(envMatrixMap),
 		AppMatrix:          matrixFromMap(appMatrixMap),
@@ -1275,6 +1330,8 @@ func buildInsights(records []AnalyticsRecord) AnalyticsInsights {
 		TrafficCategories:  categoryList(categoryMap),
 		EnvServicePivot:    envServicePivot,
 		SourceEnvOptions:   sourceEnvOptions,
+		AppServicePivot:    appServicePivot,
+		SourceAppOptions:   sourceAppOptions,
 	}
 }
 
