@@ -1,7 +1,7 @@
 # Design Document: Illumio Blocked Traffic Extractor
 
 ## 1. Objective
-To provide a stable, cross-platform standalone tool that extracts a user-selected number of days of "Reported Policy Decision: Blocked" traffic from the Illumio PCE. The tool segments queries into 1-day chunks to ensure PCE stability and avoid API timeouts, merges the results into a structured CSV, and exposes an in-app analytics dashboard for review.
+To provide a stable, cross-platform standalone tool that extracts "Reported Policy Decision: Blocked" traffic from the Illumio PCE for either a user-selected number of trailing days or an explicit inclusive date range. The tool segments queries into 1-day chunks to ensure PCE stability and avoid API timeouts, merges the results into a structured CSV, and exposes an in-app analytics dashboard for review.
 
 ## 2. Technical Architecture
 - **Language:** Go (Golang) - Compiled to single binaries for Windows, Linux, and MacOS.
@@ -24,12 +24,13 @@ To provide a stable, cross-platform standalone tool that extracts a user-selecte
 
 ### 3.2. Traffic Extraction Engine
 - **Decision Filter:** Strictly filters for `policy_decisions: ["blocked"]`.
-- **Chronological Sequencing:** Uses a worker pool (3 concurrent slots) to process the requested date window from the most recent day backwards.
+- **Chronological Sequencing:** Uses a worker pool (3 concurrent slots) to process the requested date window from the end of the selected range backwards in 1-day chunks.
 - **PCE Schema Compliance:** Ensures all mandatory fields (`query_name`, `services`, `exclude`) are present in every request to prevent HTTP 406 errors.
 - **Resilience:** Automatic 60-second cooldown on HTTP 429 (Rate Limit) and recursive retries for failed chunks.
 - **Service Filtering:** Supports both Illumio service references and direct protocol/port filters such as `TCP:445` and `UDP:5355`.
 - **Selector Hardening:** Unknown source, destination, and exclusion values are only treated as IP filters when they parse as valid IP/CIDR values; otherwise they are skipped and logged as warnings.
 - **Connection Test:** The UI connection check uses a lightweight authenticated API request rather than a full discovery collection load.
+- **Window Selection:** Users can run either a trailing `Days To Fetch` query or an explicit inclusive `Start Date` / `End Date` range.
 
 ### 3.3. Data Aggregation & Deduplication
 - **Unique Connections:** The tool treats a unique tuple of (Src IP, Dst IP, Port, Protocol, and all Labels) as a single "Unique Connection."

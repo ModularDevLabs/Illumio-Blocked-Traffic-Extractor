@@ -42,6 +42,8 @@ type PCEProfile struct {
 	SavePath   string `json:"save_path"`
 	FileName   string `json:"file_name"`
 	Days       int    `json:"days"`
+	StartDate  string `json:"start_date"`
+	EndDate    string `json:"end_date"`
 }
 
 type AppState struct {
@@ -579,6 +581,8 @@ type Config struct {
 	SavePath   string `json:"save_path"`
 	FileName   string `json:"file_name"`
 	Days       int    `json:"days"`
+	StartDate  string `json:"start_date"`
+	EndDate    string `json:"end_date"`
 }
 
 func handleTest(w http.ResponseWriter, r *http.Request) {
@@ -699,6 +703,46 @@ func parseCSVMonthBucket(row []string, getValue func([]string, string) string) s
 		}
 	}
 	return ""
+}
+
+func parseDateInput(raw string) (time.Time, error) {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return time.Time{}, nil
+	}
+	return time.Parse("2006-01-02", value)
+}
+
+func extractionDateRange(cfg Config, now time.Time) (time.Time, time.Time, int, error) {
+	start, err := parseDateInput(cfg.StartDate)
+	if err != nil {
+		return time.Time{}, time.Time{}, 0, fmt.Errorf("invalid start date %q; use YYYY-MM-DD", cfg.StartDate)
+	}
+	end, err := parseDateInput(cfg.EndDate)
+	if err != nil {
+		return time.Time{}, time.Time{}, 0, fmt.Errorf("invalid end date %q; use YYYY-MM-DD", cfg.EndDate)
+	}
+
+	if !start.IsZero() || !end.IsZero() {
+		if start.IsZero() || end.IsZero() {
+			return time.Time{}, time.Time{}, 0, fmt.Errorf("both start date and end date are required when using an explicit date range")
+		}
+		start = start.UTC()
+		end = end.UTC()
+		if end.Before(start) {
+			return time.Time{}, time.Time{}, 0, fmt.Errorf("end date must be on or after start date")
+		}
+		days := int(end.Sub(start).Hours()/24) + 1
+		return start, end, days, nil
+	}
+
+	days := cfg.Days
+	if days <= 0 {
+		days = 90
+	}
+	end = now.UTC().AddDate(0, 0, -1)
+	start = end.AddDate(0, 0, -(days - 1))
+	return start, end, days, nil
 }
 
 func monthlyPortProtocolFromRecords(records []AnalyticsRecord) []MonthlyPortProtocolSummary {
@@ -903,13 +947,15 @@ func handleStart(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
 		return
 	}
-	if cfg.Days <= 0 {
-		cfg.Days = 90
+	_, _, requestedDays, err := extractionDateRange(cfg, time.Now().UTC())
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
+		return
 	}
 
 	state.Mu.Lock()
 	state.CompletedDays = 0
-	state.RequestedDays = cfg.Days
+	state.RequestedDays = requestedDays
 	state.TotalConnections = 0
 	state.IsDone = false
 	state.IsCancelled = false
@@ -1618,7 +1664,13 @@ func runExtraction(ctx context.Context, cfg Config) {
 	protoMap := map[int]string{1: "ICMP", 2: "IGMP", 6: "TCP", 17: "UDP", 47: "GRE", 50: "ESP", 51: "AH", 58: "ICMPv6", 89: "OSPF", 112: "VRRP", 132: "SCTP"}
 
 	now := time.Now().UTC()
-	jobs := make(chan int, cfg.Days)
+	rangeStart, rangeEnd, requestedDays, err := extractionDateRange(cfg, now)
+	if err != nil {
+		addLog(fmt.Sprintf("Error: %v", err))
+		markRunFinished("", false)
+		return
+	}
+	jobs := make(chan int, requestedDays)
 	var wg sync.WaitGroup
 	for w := 1; w <= 3; w++ {
 		wg.Add(1)
@@ -1630,8 +1682,9 @@ func runExtraction(ctx context.Context, cfg Config) {
 					return
 				default:
 					dayReq := req
-					dayReq.EndDate = now.AddDate(0, 0, -day).Format("2006-01-02T00:00:00Z")
-					dayReq.StartDate = now.AddDate(0, 0, -(day + 1)).Format("2006-01-02T00:00:00Z")
+					dayStart := rangeEnd.AddDate(0, 0, -day)
+					dayReq.StartDate = dayStart.Format("2006-01-02T00:00:00Z")
+					dayReq.EndDate = dayStart.AddDate(0, 0, 1).Format("2006-01-02T00:00:00Z")
 					flows, err := client.FetchDayOfTraffic(ctx, dayReq, addLog)
 					if err == nil {
 						aggMu.Lock()
@@ -1679,7 +1732,8 @@ func runExtraction(ctx context.Context, cfg Config) {
 			}
 		}()
 	}
-	for i := 0; i < cfg.Days; i++ {
+	addLog(fmt.Sprintf("Extraction window: %s through %s (%d days).", rangeStart.Format("2006-01-02"), rangeEnd.Format("2006-01-02"), requestedDays))
+	for i := 0; i < requestedDays; i++ {
 		jobs <- i
 	}
 	close(jobs)

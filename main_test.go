@@ -3,6 +3,7 @@ package main
 import (
 	"reflect"
 	"testing"
+	"time"
 
 	"illumio-traffic-tool-v2/illumio"
 )
@@ -151,4 +152,57 @@ func TestParseSelectorRejectsUnknownNonIP(t *testing.T) {
 	if ref.IPAddress != "10.10.10.10" {
 		t.Fatalf("parseSelector returned %#v, want IPAddress 10.10.10.10", ref)
 	}
+}
+
+func TestExtractionDateRange(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, time.March, 10, 12, 0, 0, 0, time.UTC)
+
+	t.Run("explicit inclusive range", func(t *testing.T) {
+		t.Parallel()
+
+		cfg := Config{StartDate: "2026-02-01", EndDate: "2026-02-28", Days: 90}
+		start, end, days, err := extractionDateRange(cfg, now)
+		if err != nil {
+			t.Fatalf("extractionDateRange returned error: %v", err)
+		}
+		if got, want := start.Format("2006-01-02"), "2026-02-01"; got != want {
+			t.Fatalf("start = %s, want %s", got, want)
+		}
+		if got, want := end.Format("2006-01-02"), "2026-02-28"; got != want {
+			t.Fatalf("end = %s, want %s", got, want)
+		}
+		if days != 28 {
+			t.Fatalf("days = %d, want 28", days)
+		}
+	})
+
+	t.Run("trailing days defaults to yesterday", func(t *testing.T) {
+		t.Parallel()
+
+		cfg := Config{Days: 7}
+		start, end, days, err := extractionDateRange(cfg, now)
+		if err != nil {
+			t.Fatalf("extractionDateRange returned error: %v", err)
+		}
+		if got, want := end.Format("2006-01-02"), "2026-03-09"; got != want {
+			t.Fatalf("end = %s, want %s", got, want)
+		}
+		if got, want := start.Format("2006-01-02"), "2026-03-03"; got != want {
+			t.Fatalf("start = %s, want %s", got, want)
+		}
+		if days != 7 {
+			t.Fatalf("days = %d, want 7", days)
+		}
+	})
+
+	t.Run("requires both explicit dates", func(t *testing.T) {
+		t.Parallel()
+
+		_, _, _, err := extractionDateRange(Config{StartDate: "2026-02-01"}, now)
+		if err == nil {
+			t.Fatal("expected error when only one explicit date is provided")
+		}
+	})
 }

@@ -273,6 +273,15 @@
                 <label class="block text-sm font-semibold mb-2 text-amber-300 uppercase tracking-tighter">Days To Fetch</label>
                 <input id="days" type="number" min="1" max="365" value="90" class="w-full bg-gray-700 border border-gray-600 rounded p-2 focus:ring-2 focus:ring-amber-500 outline-none">
             </div>
+            <div class="col-span-1">
+                <label class="block text-sm font-semibold mb-2 text-amber-300 uppercase tracking-tighter">Start Date</label>
+                <input id="start_date" type="date" class="w-full bg-gray-700 border border-gray-600 rounded p-2 focus:ring-2 focus:ring-amber-500 outline-none">
+            </div>
+            <div class="col-span-1">
+                <label class="block text-sm font-semibold mb-2 text-amber-300 uppercase tracking-tighter">End Date</label>
+                <input id="end_date" type="date" class="w-full bg-gray-700 border border-gray-600 rounded p-2 focus:ring-2 focus:ring-amber-500 outline-none">
+                <p class="mt-2 text-xs text-gray-400">If both dates are set, the explicit date range overrides <span class="font-semibold text-gray-300">Days To Fetch</span>.</p>
+            </div>
         </div>
 
         <hr class="border-gray-700 my-8">
@@ -571,6 +580,8 @@
             document.getElementById('save_path').value = p.save_path || '';
             document.getElementById('file_name').value = p.file_name || '';
             document.getElementById('days').value = p.days || 90;
+            document.getElementById('start_date').value = p.start_date || '';
+            document.getElementById('end_date').value = p.end_date || '';
         }
 
         async function saveProfile() {
@@ -676,7 +687,17 @@
             document.getElementById('cancelBtn').classList.remove('hidden');
             document.getElementById('progressArea').classList.remove('hidden');
             document.getElementById('summaryLinkWrap').classList.add('hidden');
-            log(`Starting ${getRequestedDays()}-day extraction.`);
+            const dateRange = getRequestedDateRange();
+            if (dateRange.error) {
+                log(`<span class="text-red-400">Start failed: ${dateRange.error}</span>`);
+                resetButtons();
+                return;
+            }
+            if (dateRange.start && dateRange.end) {
+                log(`Starting extraction for ${dateRange.start} through ${dateRange.end} (${dateRange.days} days).`);
+            } else {
+                log(`Starting ${dateRange.days}-day extraction.`);
+            }
             try {
                 const res = await fetch('/api/start', { method: 'POST', body: JSON.stringify(getConfig()) });
                 const data = await res.json();
@@ -723,7 +744,29 @@
             return Math.min(raw, 365);
         }
 
+        function getRequestedDateRange() {
+            const start = document.getElementById('start_date').value;
+            const end = document.getElementById('end_date').value;
+            if ((start && !end) || (!start && end)) {
+                return { error: 'Both Start Date and End Date are required when using an explicit date range.' };
+            }
+            if (start && end) {
+                const startDate = new Date(`${start}T00:00:00Z`);
+                const endDate = new Date(`${end}T00:00:00Z`);
+                if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+                    return { error: 'Start Date and End Date must be valid dates.' };
+                }
+                if (endDate < startDate) {
+                    return { error: 'End Date must be on or after Start Date.' };
+                }
+                const days = Math.floor((endDate - startDate) / 86400000) + 1;
+                return { start, end, days };
+            }
+            return { start: '', end: '', days: getRequestedDays() };
+        }
+
         function getConfig() {
+            const dateRange = getRequestedDateRange();
             return {
                 pce_url: document.getElementById('pce_url').value,
                 org_id: document.getElementById('org_id').value,
@@ -736,7 +779,9 @@
                 services: document.getElementById('services').value,
                 save_path: document.getElementById('save_path').value,
                 file_name: document.getElementById('file_name').value,
-                days: getRequestedDays()
+                days: dateRange.days,
+                start_date: dateRange.start,
+                end_date: dateRange.end
             };
         }
     </script>
