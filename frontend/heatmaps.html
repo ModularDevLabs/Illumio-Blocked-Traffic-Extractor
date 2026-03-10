@@ -179,6 +179,7 @@
                     <div class="flex rounded-xl p-1 panel-soft">
                         <button id="envModeBtn" type="button" class="mode-button active rounded-lg px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em]">Environment</button>
                         <button id="appModeBtn" type="button" class="mode-button rounded-lg px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em]">Application</button>
+                        <button id="combinedModeBtn" type="button" class="mode-button rounded-lg px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em]">Environment + Application</button>
                     </div>
                 </div>
                 <div class="mt-5 grid gap-4 xl:grid-cols-[280px_280px_1fr]">
@@ -424,10 +425,17 @@
             currentMode = mode;
             document.getElementById('envModeBtn').classList.toggle('active', mode === 'env');
             document.getElementById('appModeBtn').classList.toggle('active', mode === 'app');
-            document.getElementById('heatmapTitle').innerText = mode === 'env' ? 'Environment Heatmap' : 'Application Heatmap';
+            document.getElementById('combinedModeBtn').classList.toggle('active', mode === 'combined');
+            document.getElementById('heatmapTitle').innerText = mode === 'env'
+                ? 'Environment Heatmap'
+                : mode === 'app'
+                    ? 'Application Heatmap'
+                    : 'Environment + Application Heatmap';
             document.getElementById('heatmapSubtitle').innerText = mode === 'env'
                 ? 'Source environment to destination environment'
-                : 'Source application to destination application';
+                : mode === 'app'
+                    ? 'Source application to destination application'
+                    : 'Source environment/application to destination environment/application';
             selectedCellKey = null;
             populateFilterOptions();
             renderHeatmap();
@@ -435,16 +443,18 @@
         }
 
         function getCurrentPivotRows() {
-            return currentMode === 'env'
-                ? (latestInsights.env_service_pivot || []).map((row) => ({
+            if (currentMode === 'env') {
+                return (latestInsights.env_service_pivot || []).map((row) => ({
                     source: row.source_env,
                     destination: row.destination_env,
                     protocol: row.protocol,
                     port: row.port,
                     flow_count: row.flow_count,
                     unique_connections: row.unique_connections
-                }))
-                : (latestInsights.app_service_pivot || []).map((row) => ({
+                }));
+            }
+            if (currentMode === 'app') {
+                return (latestInsights.app_service_pivot || []).map((row) => ({
                     source: row.source_app,
                     destination: row.destination_app,
                     protocol: row.protocol,
@@ -452,6 +462,15 @@
                     flow_count: row.flow_count,
                     unique_connections: row.unique_connections
                 }));
+            }
+            return (latestInsights.combined_service_pivot || []).map((row) => ({
+                source: row.source_combined,
+                destination: row.destination_combined,
+                protocol: row.protocol,
+                port: row.port,
+                flow_count: row.flow_count,
+                unique_connections: row.unique_connections
+            }));
         }
 
         function populateFilterOptions() {
@@ -606,7 +625,12 @@
             const selectedKey = selectedCellKey;
 
             let html = '<table class="heatmap-table text-xs"><thead><tr>';
-            html += `<th class="heatmap-row-header px-3 py-2 text-left text-gray-500">${currentMode === 'env' ? 'Source Env' : 'Source App'} \\ ${currentMode === 'env' ? 'Destination Env' : 'Destination App'}</th>`;
+            const headerLabel = currentMode === 'env'
+                ? 'Source Env \\ Destination Env'
+                : currentMode === 'app'
+                    ? 'Source App \\ Destination App'
+                    : 'Source Env/App \\ Destination Env/App';
+            html += `<th class="heatmap-row-header px-3 py-2 text-left text-gray-500">${headerLabel}</th>`;
             destinationList.forEach((destination) => {
                 html += `<th class="px-3 py-2 text-left text-gray-500">${escapeHtml(destination)}</th>`;
             });
@@ -693,6 +717,7 @@
             loadSavedTheme();
             document.getElementById('envModeBtn').addEventListener('click', () => applyMode('env'));
             document.getElementById('appModeBtn').addEventListener('click', () => applyMode('app'));
+            document.getElementById('combinedModeBtn').addEventListener('click', () => applyMode('combined'));
             document.getElementById('hideEmptyToggle').addEventListener('change', () => { selectedCellKey = null; renderHeatmap(); resetDrilldown(); });
             document.getElementById('clearFiltersBtn').addEventListener('click', () => {
                 filterState.source.clear();

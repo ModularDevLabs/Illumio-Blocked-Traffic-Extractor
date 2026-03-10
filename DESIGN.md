@@ -45,7 +45,7 @@ To provide a stable, cross-platform standalone tool that extracts a user-selecte
 - **Interaction Model:** The detailed analytics page allows each major section to be collapsed independently, with the browser persisting the user's last expanded/collapsed state.
 - **Presentation Themes:** The application supports shared dark and Illumio-inspired dark/light palettes without changing the underlying analytics dataset.
 - **CSV Re-Import:** Previously generated CSV files from this tool can be uploaded to rebuild the analytics dashboard without rerunning the query, and the summary API disables response caching so imported analytics are shown immediately.
-- **Heatmap Drilldown:** The heatmap explorer renders full environment or application matrices from the complete analytics dataset and uses pair-level protocol/port aggregates for click-through drilldown, with pivot-style multi-select filters for both the matrix and the drilldown table.
+- **Heatmap Drilldown:** The heatmap explorer renders full environment, application, or combined environment/application matrices from the complete analytics dataset and uses pair-level protocol/port aggregates for click-through drilldown, with pivot-style multi-select filters for both the matrix and the drilldown table.
 
 ## 4. CSV Schema
 The CSV is dynamically structured based on the PCE's label keys:

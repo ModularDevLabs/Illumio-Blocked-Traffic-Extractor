@@ -86,7 +86,7 @@ Notes:
 Use `/heatmaps` for a dedicated full-data heatmap view.
 
 This page provides:
--   environment and application heatmap modes
+-   environment, application, and combined environment + application heatmap modes
 -   pivot-style multi-select source and destination filters
 -   full heatmaps built from the complete analytics dataset rather than the reduced top-N dashboard view
 -   click-to-drilldown so a selected heatmap cell shows the protocol/port rows that make up that flow total

@@ -106,19 +106,30 @@ type AppServicePivotSummary struct {
 	UniqueConnections int    `json:"unique_connections"`
 }
 
+type CombinedServicePivotSummary struct {
+	SourceCombined      string `json:"source_combined"`
+	DestinationCombined string `json:"destination_combined"`
+	Protocol            string `json:"protocol"`
+	Port                int    `json:"port"`
+	FlowCount           int    `json:"flow_count"`
+	UniqueConnections   int    `json:"unique_connections"`
+}
+
 type AnalyticsInsights struct {
-	EnvMatrix          []MatrixSummary          `json:"env_matrix"`
-	AppMatrix          []MatrixSummary          `json:"app_matrix"`
-	TopSourceEnvs      []TalkerSummary          `json:"top_source_envs"`
-	TopDestinationEnvs []TalkerSummary          `json:"top_destination_envs"`
-	TopSourceIPs       []TalkerSummary          `json:"top_source_ips"`
-	TopDestinationIPs  []TalkerSummary          `json:"top_destination_ips"`
-	TopAppPairs        []TalkerSummary          `json:"top_app_pairs"`
-	TrafficCategories  []TrafficCategorySummary `json:"traffic_categories"`
-	EnvServicePivot    []EnvServicePivotSummary `json:"env_service_pivot"`
-	SourceEnvOptions   []string                 `json:"source_env_options"`
-	AppServicePivot    []AppServicePivotSummary `json:"app_service_pivot"`
-	SourceAppOptions   []string                 `json:"source_app_options"`
+	EnvMatrix             []MatrixSummary               `json:"env_matrix"`
+	AppMatrix             []MatrixSummary               `json:"app_matrix"`
+	TopSourceEnvs         []TalkerSummary               `json:"top_source_envs"`
+	TopDestinationEnvs    []TalkerSummary               `json:"top_destination_envs"`
+	TopSourceIPs          []TalkerSummary               `json:"top_source_ips"`
+	TopDestinationIPs     []TalkerSummary               `json:"top_destination_ips"`
+	TopAppPairs           []TalkerSummary               `json:"top_app_pairs"`
+	TrafficCategories     []TrafficCategorySummary      `json:"traffic_categories"`
+	EnvServicePivot       []EnvServicePivotSummary      `json:"env_service_pivot"`
+	SourceEnvOptions      []string                      `json:"source_env_options"`
+	AppServicePivot       []AppServicePivotSummary      `json:"app_service_pivot"`
+	SourceAppOptions      []string                      `json:"source_app_options"`
+	CombinedServicePivot  []CombinedServicePivotSummary `json:"combined_service_pivot"`
+	SourceCombinedOptions []string                      `json:"source_combined_options"`
 }
 
 type AnalyticsRecord struct {
@@ -1176,12 +1187,17 @@ func buildInsights(records []AnalyticsRecord) AnalyticsInsights {
 	categoryMap := make(map[string]TrafficCategorySummary)
 	envServicePivotMap := make(map[string]EnvServicePivotSummary)
 	appServicePivotMap := make(map[string]AppServicePivotSummary)
+	combinedServicePivotMap := make(map[string]CombinedServicePivotSummary)
 	sourceEnvSet := make(map[string]bool)
 	sourceAppSet := make(map[string]bool)
+	sourceCombinedSet := make(map[string]bool)
 
 	for _, record := range records {
+		sourceCombined := record.SrcEnv + " / " + record.SrcApp
+		destinationCombined := record.DstEnv + " / " + record.DstApp
 		sourceEnvSet[record.SrcEnv] = true
 		sourceAppSet[record.SrcApp] = true
+		sourceCombinedSet[sourceCombined] = true
 
 		envKey := record.SrcEnv + "->" + record.DstEnv
 		envEntry := envMatrixMap[envKey]
@@ -1265,6 +1281,16 @@ func buildInsights(records []AnalyticsRecord) AnalyticsInsights {
 		appPivotEntry.FlowCount += record.FlowCount
 		appPivotEntry.UniqueConnections++
 		appServicePivotMap[appPivotKey] = appPivotEntry
+
+		combinedPivotKey := fmt.Sprintf("%s|%s|%s|%d", sourceCombined, destinationCombined, record.Protocol, record.Port)
+		combinedPivotEntry := combinedServicePivotMap[combinedPivotKey]
+		combinedPivotEntry.SourceCombined = sourceCombined
+		combinedPivotEntry.DestinationCombined = destinationCombined
+		combinedPivotEntry.Protocol = record.Protocol
+		combinedPivotEntry.Port = record.Port
+		combinedPivotEntry.FlowCount += record.FlowCount
+		combinedPivotEntry.UniqueConnections++
+		combinedServicePivotMap[combinedPivotKey] = combinedPivotEntry
 	}
 
 	envServicePivot := make([]EnvServicePivotSummary, 0, len(envServicePivotMap))
@@ -1319,19 +1345,47 @@ func buildInsights(records []AnalyticsRecord) AnalyticsInsights {
 	}
 	sort.Strings(sourceAppOptions)
 
+	combinedServicePivot := make([]CombinedServicePivotSummary, 0, len(combinedServicePivotMap))
+	for _, item := range combinedServicePivotMap {
+		combinedServicePivot = append(combinedServicePivot, item)
+	}
+	sort.Slice(combinedServicePivot, func(i, j int) bool {
+		if combinedServicePivot[i].SourceCombined != combinedServicePivot[j].SourceCombined {
+			return combinedServicePivot[i].SourceCombined < combinedServicePivot[j].SourceCombined
+		}
+		if combinedServicePivot[i].Protocol != combinedServicePivot[j].Protocol {
+			return combinedServicePivot[i].Protocol < combinedServicePivot[j].Protocol
+		}
+		if combinedServicePivot[i].Port != combinedServicePivot[j].Port {
+			return combinedServicePivot[i].Port < combinedServicePivot[j].Port
+		}
+		if combinedServicePivot[i].FlowCount != combinedServicePivot[j].FlowCount {
+			return combinedServicePivot[i].FlowCount > combinedServicePivot[j].FlowCount
+		}
+		return combinedServicePivot[i].DestinationCombined < combinedServicePivot[j].DestinationCombined
+	})
+
+	sourceCombinedOptions := make([]string, 0, len(sourceCombinedSet))
+	for name := range sourceCombinedSet {
+		sourceCombinedOptions = append(sourceCombinedOptions, name)
+	}
+	sort.Strings(sourceCombinedOptions)
+
 	return AnalyticsInsights{
-		EnvMatrix:          matrixFromMap(envMatrixMap),
-		AppMatrix:          matrixFromMap(appMatrixMap),
-		TopSourceEnvs:      topTalkersFromMap(topSourceEnvMap, 12),
-		TopDestinationEnvs: topTalkersFromMap(topDestinationEnvMap, 12),
-		TopSourceIPs:       topTalkersFromMap(topSourceIPMap, 12),
-		TopDestinationIPs:  topTalkersFromMap(topDestinationIPMap, 12),
-		TopAppPairs:        topTalkersFromMap(topAppPairMap, 15),
-		TrafficCategories:  categoryList(categoryMap),
-		EnvServicePivot:    envServicePivot,
-		SourceEnvOptions:   sourceEnvOptions,
-		AppServicePivot:    appServicePivot,
-		SourceAppOptions:   sourceAppOptions,
+		EnvMatrix:             matrixFromMap(envMatrixMap),
+		AppMatrix:             matrixFromMap(appMatrixMap),
+		TopSourceEnvs:         topTalkersFromMap(topSourceEnvMap, 12),
+		TopDestinationEnvs:    topTalkersFromMap(topDestinationEnvMap, 12),
+		TopSourceIPs:          topTalkersFromMap(topSourceIPMap, 12),
+		TopDestinationIPs:     topTalkersFromMap(topDestinationIPMap, 12),
+		TopAppPairs:           topTalkersFromMap(topAppPairMap, 15),
+		TrafficCategories:     categoryList(categoryMap),
+		EnvServicePivot:       envServicePivot,
+		SourceEnvOptions:      sourceEnvOptions,
+		AppServicePivot:       appServicePivot,
+		SourceAppOptions:      sourceAppOptions,
+		CombinedServicePivot:  combinedServicePivot,
+		SourceCombinedOptions: sourceCombinedOptions,
 	}
 }
 
