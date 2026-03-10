@@ -75,10 +75,31 @@
         [class*="text-fuchsia-300"], [class*="text-violet-300"], [class*="text-violet-200"], [class*="text-fuchsia-200"] { color: var(--secondary) !important; }
         [class*="text-amber-300"], [class*="text-amber-200"] { color: var(--warning) !important; }
         a.panel-soft, button.panel-soft { color: var(--text) !important; }
-        select[multiple] {
+        .filter-trigger, .filter-search {
             background: var(--panel);
             color: var(--text);
             border: 1px solid var(--border);
+        }
+        .filter-dropdown {
+            position: relative;
+        }
+        .filter-menu {
+            position: absolute;
+            top: calc(100% + 0.5rem);
+            left: 0;
+            width: 100%;
+            min-width: 16rem;
+            z-index: 20;
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 1rem;
+            box-shadow: 0 18px 36px rgba(0, 0, 0, 0.28);
+        }
+        .filter-option {
+            color: var(--text);
+        }
+        .filter-option:hover {
+            background: color-mix(in srgb, var(--accent) 10%, transparent);
         }
         .heatmap-table {
             border-collapse: separate;
@@ -162,14 +183,14 @@
                 </div>
                 <div class="mt-5 grid gap-4 xl:grid-cols-[280px_280px_1fr]">
                     <div class="rounded-2xl border border-gray-800 bg-gray-900 p-4">
-                        <label for="sourceFilter" class="mb-3 block text-sm font-semibold text-gray-300">Source Filter</label>
-                        <select id="sourceFilter" multiple size="10" class="w-full rounded-xl px-3 py-3 text-sm"></select>
-                        <p class="mt-3 text-xs text-gray-500">Use Ctrl/Cmd-click for multiple selection. Leave empty to include all sources.</p>
+                        <label class="mb-3 block text-sm font-semibold text-gray-300">Source Filter</label>
+                        <div id="sourceFilterWrap"></div>
+                        <p class="mt-3 text-xs text-gray-500">Choose one or more source values. Leave all unchecked to include all sources.</p>
                     </div>
                     <div class="rounded-2xl border border-gray-800 bg-gray-900 p-4">
-                        <label for="destinationFilter" class="mb-3 block text-sm font-semibold text-gray-300">Destination Filter</label>
-                        <select id="destinationFilter" multiple size="10" class="w-full rounded-xl px-3 py-3 text-sm"></select>
-                        <p class="mt-3 text-xs text-gray-500">Use Ctrl/Cmd-click for multiple selection. Leave empty to include all destinations.</p>
+                        <label class="mb-3 block text-sm font-semibold text-gray-300">Destination Filter</label>
+                        <div id="destinationFilterWrap"></div>
+                        <p class="mt-3 text-xs text-gray-500">Choose one or more destination values. Leave all unchecked to include all destinations.</p>
                     </div>
                     <div class="rounded-2xl border border-gray-800 bg-gray-900 p-4">
                         <div class="grid gap-4 md:grid-cols-3">
@@ -220,6 +241,21 @@
                     Click a populated heatmap cell to show the contributing protocols and ports.
                 </div>
                 <div id="drilldownPanel" class="hidden space-y-4">
+                    <div class="grid gap-4 lg:grid-cols-[280px_280px_minmax(0,1fr)]">
+                        <div class="rounded-2xl border border-gray-800 bg-gray-900 p-4">
+                            <label class="mb-3 block text-sm font-semibold text-gray-300">Protocol Filter</label>
+                            <div id="drilldownProtocolFilterWrap"></div>
+                        </div>
+                        <div class="rounded-2xl border border-gray-800 bg-gray-900 p-4">
+                            <label class="mb-3 block text-sm font-semibold text-gray-300">Port Filter</label>
+                            <div id="drilldownPortFilterWrap"></div>
+                        </div>
+                        <div class="rounded-2xl border border-gray-800 bg-gray-900 p-4">
+                            <p class="text-xs uppercase tracking-widest text-gray-500">Drilldown Filters</p>
+                            <p class="mt-2 text-sm" style="color: var(--text);">Use pivot-style filters to narrow the selected cell by protocol and port.</p>
+                            <button id="clearDrilldownFiltersBtn" type="button" class="mt-4 rounded-lg px-4 py-2 text-sm font-semibold panel-soft">Clear Drilldown Filters</button>
+                        </div>
+                    </div>
                     <div class="grid gap-4 md:grid-cols-3">
                         <div class="rounded-2xl border border-gray-800 bg-gray-900 p-4">
                             <p class="text-xs uppercase tracking-widest text-gray-500">Selected Pair Flows</p>
@@ -256,6 +292,13 @@
         let latestInsights = {};
         let currentMode = 'env';
         let selectedCellKey = null;
+        let selectedDrilldownPair = null;
+        const filterState = {
+            source: new Set(),
+            destination: new Set(),
+            drillProtocol: new Set(),
+            drillPort: new Set()
+        };
 
         function applyTheme(theme) {
             document.body.dataset.theme = theme;
@@ -281,6 +324,94 @@
                 .replaceAll('"', '&quot;')
                 .replaceAll("'", '&#39;');
         }
+
+        function renderCheckboxFilter(containerId, items, stateKey, placeholder) {
+            const container = document.getElementById(containerId);
+            const selectedValues = filterState[stateKey] || new Set();
+            const countLabel = selectedValues.size === 0 ? placeholder : `${selectedValues.size} selected`;
+            container.innerHTML = `
+                <div class="filter-dropdown" data-filter-dropdown="${stateKey}">
+                    <button type="button" class="filter-trigger flex w-full items-center justify-between rounded-xl px-3 py-3 text-sm font-medium" data-filter-trigger>
+                        <span>${escapeHtml(countLabel)}</span>
+                        <span class="muted text-xs">▼</span>
+                    </button>
+                    <div class="filter-menu hidden p-3" data-filter-menu>
+                        <input type="text" class="filter-search mb-3 w-full rounded-lg px-3 py-2 text-sm" placeholder="Search..." data-filter-search>
+                        <div class="mb-3 flex gap-2">
+                            <button type="button" class="rounded-lg px-3 py-2 text-xs font-semibold panel-soft" data-filter-select-all>Select All</button>
+                            <button type="button" class="rounded-lg px-3 py-2 text-xs font-semibold panel-soft" data-filter-clear>Clear</button>
+                        </div>
+                        <div class="max-h-64 space-y-1 overflow-auto" data-filter-options></div>
+                    </div>
+                </div>
+            `;
+
+            const root = container.querySelector('[data-filter-dropdown]');
+            const trigger = root.querySelector('[data-filter-trigger]');
+            const menu = root.querySelector('[data-filter-menu]');
+            const search = root.querySelector('[data-filter-search]');
+            const optionsWrap = root.querySelector('[data-filter-options]');
+
+            function renderOptions(searchTerm = '') {
+                const term = searchTerm.trim().toLowerCase();
+                optionsWrap.innerHTML = '';
+                items
+                    .filter((item) => item.toLowerCase().includes(term))
+                    .forEach((item) => {
+                        const checked = selectedValues.has(item);
+                        const label = document.createElement('label');
+                        label.className = 'filter-option flex items-center gap-2 rounded-lg px-2 py-2 text-sm';
+                        label.innerHTML = `
+                            <input type="checkbox" ${checked ? 'checked' : ''} data-value="${escapeHtml(item)}">
+                            <span>${escapeHtml(item)}</span>
+                        `;
+                        optionsWrap.appendChild(label);
+                    });
+
+                optionsWrap.querySelectorAll('input[type="checkbox"]').forEach((checkbox) => {
+                    checkbox.addEventListener('change', () => {
+                        const value = checkbox.dataset.value;
+                        if (checkbox.checked) selectedValues.add(value);
+                        else selectedValues.delete(value);
+                        filterState[stateKey] = selectedValues;
+                        renderCheckboxFilter(containerId, items, stateKey, placeholder);
+                        runFiltersForState(stateKey);
+                    });
+                });
+            }
+
+            trigger.addEventListener('click', (event) => {
+                event.stopPropagation();
+                document.querySelectorAll('[data-filter-menu]').forEach((other) => {
+                    if (other !== menu) other.classList.add('hidden');
+                });
+                menu.classList.toggle('hidden');
+                if (!menu.classList.contains('hidden')) search.focus();
+            });
+
+            root.querySelector('[data-filter-select-all]').addEventListener('click', () => {
+                items.forEach((item) => selectedValues.add(item));
+                filterState[stateKey] = selectedValues;
+                renderCheckboxFilter(containerId, items, stateKey, placeholder);
+                runFiltersForState(stateKey);
+            });
+
+            root.querySelector('[data-filter-clear]').addEventListener('click', () => {
+                selectedValues.clear();
+                filterState[stateKey] = selectedValues;
+                renderCheckboxFilter(containerId, items, stateKey, placeholder);
+                runFiltersForState(stateKey);
+            });
+
+            search.addEventListener('input', () => renderOptions(search.value));
+            renderOptions();
+        }
+
+        document.addEventListener('click', (event) => {
+            if (!event.target.closest('[data-filter-dropdown]')) {
+                document.querySelectorAll('[data-filter-menu]').forEach((menu) => menu.classList.add('hidden'));
+            }
+        });
 
         function applyMode(mode) {
             currentMode = mode;
@@ -316,34 +447,19 @@
                 }));
         }
 
-        function getSelectedValues(selectId) {
-            return Array.from(document.getElementById(selectId).selectedOptions).map((option) => option.value);
-        }
-
-        function setSelectOptions(selectId, values) {
-            const select = document.getElementById(selectId);
-            const previous = new Set(getSelectedValues(selectId));
-            select.innerHTML = '';
-            values.forEach((value) => {
-                const option = document.createElement('option');
-                option.value = value;
-                option.innerText = value;
-                option.selected = previous.has(value);
-                select.appendChild(option);
-            });
-        }
-
         function populateFilterOptions() {
             const rows = getCurrentPivotRows();
             const sources = Array.from(new Set(rows.map((row) => row.source))).sort((a, b) => a.localeCompare(b));
             const destinations = Array.from(new Set(rows.map((row) => row.destination))).sort((a, b) => a.localeCompare(b));
-            setSelectOptions('sourceFilter', sources);
-            setSelectOptions('destinationFilter', destinations);
+            filterState.source = new Set(Array.from(filterState.source).filter((item) => sources.includes(item)));
+            filterState.destination = new Set(Array.from(filterState.destination).filter((item) => destinations.includes(item)));
+            renderCheckboxFilter('sourceFilterWrap', sources, 'source', 'All Sources');
+            renderCheckboxFilter('destinationFilterWrap', destinations, 'destination', 'All Destinations');
         }
 
         function filterPivotRows(rows) {
-            const selectedSources = new Set(getSelectedValues('sourceFilter'));
-            const selectedDestinations = new Set(getSelectedValues('destinationFilter'));
+            const selectedSources = filterState.source;
+            const selectedDestinations = filterState.destination;
             return rows.filter((row) => {
                 if (selectedSources.size > 0 && !selectedSources.has(row.source)) return false;
                 if (selectedDestinations.size > 0 && !selectedDestinations.has(row.destination)) return false;
@@ -351,15 +467,58 @@
             });
         }
 
+        function getCurrentDrilldownRows() {
+            if (!selectedDrilldownPair) return [];
+            const { source, destination } = selectedDrilldownPair;
+            return filterPivotRows(getCurrentPivotRows())
+                .filter((row) => row.source === source && row.destination === destination);
+        }
+
+        function filterDrilldownRows(rows) {
+            return rows.filter((row) => {
+                if (filterState.drillProtocol.size > 0 && !filterState.drillProtocol.has(row.protocol)) return false;
+                if (filterState.drillPort.size > 0 && !filterState.drillPort.has(String(row.port))) return false;
+                return true;
+            });
+        }
+
+        function populateDrilldownFilters(rows) {
+            const protocols = Array.from(new Set(rows.map((row) => row.protocol))).sort((a, b) => a.localeCompare(b));
+            const ports = Array.from(new Set(rows.map((row) => String(row.port)))).sort((a, b) => Number(a) - Number(b));
+            filterState.drillProtocol = new Set(Array.from(filterState.drillProtocol).filter((item) => protocols.includes(item)));
+            filterState.drillPort = new Set(Array.from(filterState.drillPort).filter((item) => ports.includes(item)));
+            renderCheckboxFilter('drilldownProtocolFilterWrap', protocols, 'drillProtocol', 'All Protocols');
+            renderCheckboxFilter('drilldownPortFilterWrap', ports, 'drillPort', 'All Ports');
+        }
+
+        function runFiltersForState(stateKey) {
+            if (stateKey === 'source' || stateKey === 'destination') {
+                selectedCellKey = null;
+                selectedDrilldownPair = null;
+                filterState.drillProtocol.clear();
+                filterState.drillPort.clear();
+                renderHeatmap();
+                resetDrilldown();
+                return;
+            }
+            if (selectedDrilldownPair) {
+                renderDrilldown(selectedDrilldownPair.source, selectedDrilldownPair.destination);
+            }
+        }
+
         function resetDrilldown() {
             document.getElementById('drilldownEmpty').classList.remove('hidden');
             document.getElementById('drilldownPanel').classList.add('hidden');
             document.getElementById('drilldownLabel').innerText = 'Select a heatmap cell to inspect the protocol and port composition.';
+            document.getElementById('drilldownProtocolFilterWrap').innerHTML = '';
+            document.getElementById('drilldownPortFilterWrap').innerHTML = '';
         }
 
         function renderDrilldown(source, destination) {
-            const rows = filterPivotRows(getCurrentPivotRows())
-                .filter((row) => row.source === source && row.destination === destination)
+            selectedDrilldownPair = { source, destination };
+            const baseRows = getCurrentDrilldownRows();
+            populateDrilldownFilters(baseRows);
+            const rows = filterDrilldownRows(baseRows)
                 .sort((a, b) => {
                     if (b.flow_count !== a.flow_count) return b.flow_count - a.flow_count;
                     if (a.protocol !== b.protocol) return a.protocol.localeCompare(b.protocol);
@@ -477,6 +636,8 @@
             wrap.querySelectorAll('.heatmap-cell[data-clickable="true"]').forEach((cell) => {
                 cell.addEventListener('click', () => {
                     selectedCellKey = `${cell.dataset.source}|||${cell.dataset.destination}`;
+                    filterState.drillProtocol.clear();
+                    filterState.drillPort.clear();
                     renderHeatmap();
                     renderDrilldown(cell.dataset.source, cell.dataset.destination);
                 });
@@ -525,15 +686,22 @@
             loadSavedTheme();
             document.getElementById('envModeBtn').addEventListener('click', () => applyMode('env'));
             document.getElementById('appModeBtn').addEventListener('click', () => applyMode('app'));
-            document.getElementById('sourceFilter').addEventListener('change', () => { selectedCellKey = null; renderHeatmap(); resetDrilldown(); });
-            document.getElementById('destinationFilter').addEventListener('change', () => { selectedCellKey = null; renderHeatmap(); resetDrilldown(); });
             document.getElementById('hideEmptyToggle').addEventListener('change', () => { selectedCellKey = null; renderHeatmap(); resetDrilldown(); });
             document.getElementById('clearFiltersBtn').addEventListener('click', () => {
-                document.getElementById('sourceFilter').selectedIndex = -1;
-                document.getElementById('destinationFilter').selectedIndex = -1;
+                filterState.source.clear();
+                filterState.destination.clear();
+                filterState.drillProtocol.clear();
+                filterState.drillPort.clear();
+                populateFilterOptions();
                 selectedCellKey = null;
+                selectedDrilldownPair = null;
                 renderHeatmap();
                 resetDrilldown();
+            });
+            document.getElementById('clearDrilldownFiltersBtn').addEventListener('click', () => {
+                filterState.drillProtocol.clear();
+                filterState.drillPort.clear();
+                if (selectedDrilldownPair) renderDrilldown(selectedDrilldownPair.source, selectedDrilldownPair.destination);
             });
             loadHeatmaps();
         };

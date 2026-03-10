@@ -87,9 +87,10 @@ Use `/heatmaps` for a dedicated full-data heatmap view.
 
 This page provides:
 -   environment and application heatmap modes
--   multi-select source and destination filters
+-   pivot-style multi-select source and destination filters
 -   full heatmaps built from the complete analytics dataset rather than the reduced top-N dashboard view
 -   click-to-drilldown so a selected heatmap cell shows the protocol/port rows that make up that flow total
+-   pivot-style multi-select protocol and port filters inside the drilldown panel
 
 Notes:
 -   `Hide Empty Rows/Cols` is enabled by default to keep large matrices readable.
