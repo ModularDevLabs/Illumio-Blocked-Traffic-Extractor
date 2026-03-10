@@ -1109,7 +1109,24 @@ func parseDirectService(entry string) (illumio.PortProtoService, bool) {
 	return service, true
 }
 
-func buildServiceIncludeEntries(raw string, serviceMap map[string]string) ([]interface{}, []string) {
+func serviceEntriesFromService(service illumio.Service) []interface{} {
+	entries := make([]interface{}, 0, len(service.ServicePorts))
+
+	for _, port := range service.ServicePorts {
+		entry := illumio.PortProtoService{
+			Port:     port.Port,
+			ToPort:   port.ToPort,
+			Proto:    port.Proto,
+			ICMPType: port.ICMPType,
+			ICMPCode: port.ICMPCode,
+		}
+		entries = append(entries, entry)
+	}
+
+	return entries
+}
+
+func buildServiceIncludeEntries(raw string, serviceMap map[string][]interface{}) ([]interface{}, []string) {
 	includes := make([]interface{}, 0)
 	warnings := make([]string, 0)
 
@@ -1118,12 +1135,12 @@ func buildServiceIncludeEntries(raw string, serviceMap map[string]string) ([]int
 		if entry == "" {
 			continue
 		}
-		if href, ok := serviceMap[entry]; ok {
-			includes = append(includes, illumio.ServiceRef{Href: href})
-			continue
-		}
 		if directService, ok := parseDirectService(entry); ok {
 			includes = append(includes, directService)
+			continue
+		}
+		if expanded, ok := serviceMap[entry]; ok && len(expanded) > 0 {
+			includes = append(includes, expanded...)
 			continue
 		}
 		warnings = append(warnings, entry)
@@ -1519,9 +1536,9 @@ func runExtraction(ctx context.Context, cfg Config) {
 		orderedKeys = append(orderedKeys, k)
 	}
 
-	serviceMap := make(map[string]string)
+	serviceMap := make(map[string][]interface{})
 	for _, s := range allServices {
-		serviceMap[s.Name] = s.Href
+		serviceMap[s.Name] = serviceEntriesFromService(s)
 	}
 	ipListMap := make(map[string]string)
 	for _, i := range allIPLists {

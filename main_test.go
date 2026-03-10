@@ -76,8 +76,10 @@ func TestParseDirectService(t *testing.T) {
 func TestBuildServiceIncludeEntries(t *testing.T) {
 	t.Parallel()
 
-	serviceMap := map[string]string{
-		"SSH": "/orgs/1/sec_policy/active/services/1",
+	serviceMap := map[string][]interface{}{
+		"SSH": {
+			illumio.PortProtoService{Port: 22, Proto: 6},
+		},
 	}
 
 	got, warnings := buildServiceIncludeEntries("SSH, TCP:445, UDP:5355, Unknown Service", serviceMap)
@@ -89,9 +91,9 @@ func TestBuildServiceIncludeEntries(t *testing.T) {
 		t.Fatalf("buildServiceIncludeEntries returned %d entries, want 3", len(got))
 	}
 
-	serviceRef, ok := got[0].(illumio.ServiceRef)
-	if !ok || serviceRef.Href != serviceMap["SSH"] {
-		t.Fatalf("first include = %#v, want ServiceRef for SSH", got[0])
+	serviceRef, ok := got[0].(illumio.PortProtoService)
+	if !ok || serviceRef != (illumio.PortProtoService{Port: 22, Proto: 6}) {
+		t.Fatalf("first include = %#v, want expanded service entry for SSH", got[0])
 	}
 
 	tcpRef, ok := got[1].(illumio.PortProtoService)
@@ -102,6 +104,35 @@ func TestBuildServiceIncludeEntries(t *testing.T) {
 	udpRef, ok := got[2].(illumio.PortProtoService)
 	if !ok || udpRef != (illumio.PortProtoService{Port: 5355, Proto: 17}) {
 		t.Fatalf("third include = %#v, want UDP:5355", got[2])
+	}
+}
+
+func TestServiceEntriesFromService(t *testing.T) {
+	t.Parallel()
+
+	icmpType := 8
+	icmpCode := 0
+	service := illumio.Service{
+		Name: "Complex Service",
+		ServicePorts: []illumio.ServicePort{
+			{Port: 443, Proto: 6},
+			{Proto: 1, ICMPType: &icmpType, ICMPCode: &icmpCode},
+		},
+	}
+
+	got := serviceEntriesFromService(service)
+	if len(got) != 2 {
+		t.Fatalf("serviceEntriesFromService returned %d entries, want 2", len(got))
+	}
+
+	first, ok := got[0].(illumio.PortProtoService)
+	if !ok || first.Port != 443 || first.Proto != 6 {
+		t.Fatalf("first expanded entry = %#v", got[0])
+	}
+
+	second, ok := got[1].(illumio.PortProtoService)
+	if !ok || second.Proto != 1 || second.ICMPType == nil || *second.ICMPType != icmpType {
+		t.Fatalf("second expanded entry = %#v", got[1])
 	}
 }
 

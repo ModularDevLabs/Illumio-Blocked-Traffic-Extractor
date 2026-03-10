@@ -77,7 +77,31 @@ func TestLivePCEConnectionAndDirectServiceQuery(t *testing.T) {
 		t.Fatal("GetServices returned no services")
 	}
 
+	var namedServiceIncludes []interface{}
+	for _, service := range services {
+		for _, port := range service.ServicePorts {
+			if port.Port > 0 && (port.Proto == 6 || port.Proto == 17) {
+				namedServiceIncludes = serviceEntriesFromService(illumio.Service{
+					Name:         service.Name,
+					ServicePorts: []illumio.ServicePort{port},
+				})
+				break
+			}
+		}
+		if len(namedServiceIncludes) > 0 {
+			break
+		}
+	}
+	if len(namedServiceIncludes) == 0 {
+		t.Fatal("GetServices returned no Explorer-compatible named service entries")
+	}
+
 	now := time.Now().UTC()
+	serviceIncludes := append([]interface{}{}, namedServiceIncludes[0])
+	serviceIncludes = append(serviceIncludes,
+		illumio.PortProtoService{Port: 445, Proto: 6},
+		illumio.PortProtoService{Port: 5355, Proto: 17},
+	)
 	req := illumio.AsyncQueryRequest{
 		Sources: illumio.IncludeExclude{
 			Include: [][]illumio.LabelRef{},
@@ -88,10 +112,7 @@ func TestLivePCEConnectionAndDirectServiceQuery(t *testing.T) {
 			Exclude: []illumio.LabelRef{},
 		},
 		Services: illumio.ServiceFilter{
-			Include: []interface{}{
-				illumio.PortProtoService{Port: 445, Proto: 6},
-				illumio.PortProtoService{Port: 5355, Proto: 17},
-			},
+			Include: serviceIncludes,
 			Exclude: []interface{}{},
 		},
 		StartDate:  now.Add(-24 * time.Hour).Format("2006-01-02T00:00:00Z"),
@@ -101,7 +122,7 @@ func TestLivePCEConnectionAndDirectServiceQuery(t *testing.T) {
 
 	flows, err := client.FetchDayOfTraffic(ctx, req, func(string) {})
 	if err != nil {
-		t.Fatalf("FetchDayOfTraffic with direct services failed: %v", err)
+		t.Fatalf("FetchDayOfTraffic with named and direct services failed: %v", err)
 	}
 
 	if flows == nil {

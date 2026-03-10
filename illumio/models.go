@@ -9,8 +9,29 @@ type Label struct {
 }
 
 type Service struct {
-	Href string `json:"href"`
-	Name string `json:"name"`
+	Href            string           `json:"href"`
+	Name            string           `json:"name"`
+	ProcessName     string           `json:"process_name"`
+	ServicePorts    []ServicePort    `json:"service_ports"`
+	WindowsServices []WindowsService `json:"windows_services"`
+}
+
+type ServicePort struct {
+	Port     int  `json:"port,omitempty"`
+	ToPort   int  `json:"to_port,omitempty"`
+	Proto    int  `json:"proto"`
+	ICMPType *int `json:"icmp_type,omitempty"`
+	ICMPCode *int `json:"icmp_code,omitempty"`
+}
+
+type WindowsService struct {
+	ServiceName string `json:"service_name,omitempty"`
+	ProcessName string `json:"process_name,omitempty"`
+	Port        int    `json:"port,omitempty"`
+	ToPort      int    `json:"to_port,omitempty"`
+	Proto       *int   `json:"proto,omitempty"`
+	ICMPType    *int   `json:"icmp_type,omitempty"`
+	ICMPCode    *int   `json:"icmp_code,omitempty"`
 }
 
 type IPList struct {
@@ -77,14 +98,14 @@ type ServiceFilter struct {
 	Exclude []interface{} `json:"exclude"`
 }
 
-type ServiceRef struct {
-	Href string `json:"href"`
-}
-
 type PortProtoService struct {
-	Port   int `json:"port,omitempty"`
-	ToPort int `json:"to_port,omitempty"`
-	Proto  int `json:"proto,omitempty"`
+	Port               int    `json:"port,omitempty"`
+	ToPort             int    `json:"to_port,omitempty"`
+	Proto              int    `json:"proto,omitempty"`
+	ProcessName        string `json:"process_name,omitempty"`
+	WindowsServiceName string `json:"windows_service_name,omitempty"`
+	ICMPType           *int   `json:"icmp_type,omitempty"`
+	ICMPCode           *int   `json:"icmp_code,omitempty"`
 }
 
 type IncludeExclude struct {
