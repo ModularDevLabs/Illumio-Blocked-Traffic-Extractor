@@ -41,11 +41,12 @@ To provide a stable, cross-platform standalone tool that extracts a user-selecte
 - **Summary Route:** `/summary`
 - **Executive Route:** `/executive-summary`
 - **In-Memory Analytics:** After a successful fetch, the backend derives analytics state from the aggregated flow set.
-- **Views:** Port/protocol summary, an environment-service pivot table, environment cross-talk, app-to-app matrix, top talkers, external/unmanaged summaries, a dedicated `/heatmaps` explorer page with drilldowns, and a separate executive-summary page.
+- **Views:** Port/protocol summary, a monthly port/protocol breakdown, an environment-service pivot table, environment cross-talk, app-to-app matrix, top talkers, external/unmanaged summaries, a dedicated `/heatmaps` explorer page with drilldowns, and a separate executive-summary page.
 - **Interaction Model:** The detailed analytics page allows each major section to be collapsed independently, with the browser persisting the user's last expanded/collapsed state.
 - **Presentation Themes:** The application supports shared dark and Illumio-inspired dark/light palettes without changing the underlying analytics dataset.
 - **CSV Re-Import:** Previously generated CSV files from this tool can be uploaded to rebuild the analytics dashboard without rerunning the query, and the summary API disables response caching so imported analytics are shown immediately.
 - **Heatmap Drilldown:** The heatmap explorer renders full environment, application, or combined environment/application matrices from the complete analytics dataset and uses pair-level protocol/port aggregates for click-through drilldown, with pivot-style multi-select filters for both the matrix and the drilldown table.
+- **Monthly Breakdown:** Live fetches compute exact per-month port/protocol totals while processing daily chunks; imported CSVs use the recorded detection month on each row as the available monthly grouping signal.
 
 ## 4. CSV Schema
 The CSV is dynamically structured based on the PCE's label keys:

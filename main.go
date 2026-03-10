@@ -115,6 +115,14 @@ type CombinedServicePivotSummary struct {
 	UniqueConnections   int    `json:"unique_connections"`
 }
 
+type MonthlyPortProtocolSummary struct {
+	Month             string `json:"month"`
+	Protocol          string `json:"protocol"`
+	Port              int    `json:"port"`
+	FlowCount         int    `json:"flow_count"`
+	UniqueConnections int    `json:"unique_connections"`
+}
+
 type AnalyticsInsights struct {
 	EnvMatrix             []MatrixSummary               `json:"env_matrix"`
 	AppMatrix             []MatrixSummary               `json:"app_matrix"`
@@ -130,6 +138,7 @@ type AnalyticsInsights struct {
 	SourceAppOptions      []string                      `json:"source_app_options"`
 	CombinedServicePivot  []CombinedServicePivotSummary `json:"combined_service_pivot"`
 	SourceCombinedOptions []string                      `json:"source_combined_options"`
+	MonthlyPortProtocol   []MonthlyPortProtocolSummary  `json:"monthly_port_protocol"`
 }
 
 type AnalyticsRecord struct {
@@ -144,6 +153,7 @@ type AnalyticsRecord struct {
 	DstManaged bool
 	Protocol   string
 	Port       int
+	Month      string
 	FlowCount  int
 }
 
@@ -668,6 +678,65 @@ func protocolNumberFromName(value string) int {
 	return 0
 }
 
+func monthBucketFromTime(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.UTC().Format("2006-01")
+}
+
+func parseCSVMonthBucket(row []string, getValue func([]string, string) string) string {
+	candidates := []string{
+		getValue(row, "Last Detected"),
+		getValue(row, "First Detected"),
+	}
+	for _, candidate := range candidates {
+		if candidate == "" {
+			continue
+		}
+		if ts, err := time.Parse("2006-01-02 15:04:05", candidate); err == nil {
+			return monthBucketFromTime(ts)
+		}
+	}
+	return ""
+}
+
+func monthlyPortProtocolFromRecords(records []AnalyticsRecord) []MonthlyPortProtocolSummary {
+	items := make(map[string]MonthlyPortProtocolSummary)
+	for _, record := range records {
+		month := strings.TrimSpace(record.Month)
+		if month == "" {
+			continue
+		}
+		key := fmt.Sprintf("%s|%s|%d", month, record.Protocol, record.Port)
+		entry := items[key]
+		entry.Month = month
+		entry.Protocol = record.Protocol
+		entry.Port = record.Port
+		entry.FlowCount += record.FlowCount
+		entry.UniqueConnections++
+		items[key] = entry
+	}
+
+	results := make([]MonthlyPortProtocolSummary, 0, len(items))
+	for _, item := range items {
+		results = append(results, item)
+	}
+	sort.Slice(results, func(i, j int) bool {
+		if results[i].Month != results[j].Month {
+			return results[i].Month > results[j].Month
+		}
+		if results[i].FlowCount != results[j].FlowCount {
+			return results[i].FlowCount > results[j].FlowCount
+		}
+		if results[i].Protocol != results[j].Protocol {
+			return results[i].Protocol < results[j].Protocol
+		}
+		return results[i].Port < results[j].Port
+	})
+	return results
+}
+
 func parseCSVAnalytics(reader io.Reader) ([]PortProtocolSummary, AnalyticsInsights, error) {
 	csvReader := csv.NewReader(reader)
 	rows, err := csvReader.ReadAll()
@@ -755,6 +824,7 @@ func parseCSVAnalytics(reader io.Reader) ([]PortProtocolSummary, AnalyticsInsigh
 			DstManaged: dstEnv != "External/Unmanaged" || dstApp != "External/Unmanaged",
 			Protocol:   protocol,
 			Port:       port,
+			Month:      parseCSVMonthBucket(row, getValue),
 			FlowCount:  flowCount,
 		})
 	}
@@ -785,7 +855,9 @@ func parseCSVAnalytics(reader io.Reader) ([]PortProtocolSummary, AnalyticsInsigh
 		return finalSummary[i].Protocol < finalSummary[j].Protocol
 	})
 
-	return finalSummary, buildInsights(records), nil
+	insights := buildInsights(records)
+	insights.MonthlyPortProtocol = monthlyPortProtocolFromRecords(records)
+	return finalSummary, insights, nil
 }
 
 func handleImportCSV(w http.ResponseWriter, r *http.Request) {
@@ -1524,7 +1596,9 @@ func runExtraction(ctx context.Context, cfg Config) {
 		FirstSeen, LastSeen time.Time
 		Raw                 illumio.TrafficFlow
 	})
+	monthlySummaryMap := make(map[string]MonthlyPortProtocolSummary)
 	var aggMu sync.Mutex
+	protoMap := map[int]string{1: "ICMP", 2: "IGMP", 6: "TCP", 17: "UDP", 47: "GRE", 50: "ESP", 51: "AH", 58: "ICMPv6", 89: "OSPF", 112: "VRRP", 132: "SCTP"}
 
 	now := time.Now().UTC()
 	jobs := make(chan int, cfg.Days)
@@ -1560,6 +1634,20 @@ func runExtraction(ctx context.Context, cfg Config) {
 								entry.LastSeen = f.Timestamp
 							}
 							aggregatedFlows[key] = entry
+
+							protocol := fmt.Sprintf("%d", f.Proto)
+							if name, ok := protoMap[f.Proto]; ok {
+								protocol = name
+							}
+							monthKey := monthBucketFromTime(f.Timestamp)
+							summaryKey := fmt.Sprintf("%s|%s|%d", monthKey, protocol, f.DstPort)
+							monthEntry := monthlySummaryMap[summaryKey]
+							monthEntry.Month = monthKey
+							monthEntry.Protocol = protocol
+							monthEntry.Port = f.DstPort
+							monthEntry.FlowCount += f.NumConnections
+							monthEntry.UniqueConnections++
+							monthlySummaryMap[summaryKey] = monthEntry
 						}
 						state.Mu.Lock()
 						state.CompletedDays++
@@ -1619,7 +1707,6 @@ func runExtraction(ctx context.Context, cfg Config) {
 	header = append(header, "FQDN", "Port", "Protocol", "Process Name", "Flows")
 	w.Write(header)
 
-	protoMap := map[int]string{1: "ICMP", 2: "IGMP", 6: "TCP", 17: "UDP", 47: "GRE", 50: "ESP", 51: "AH", 58: "ICMPv6", 89: "OSPF", 112: "VRRP", 132: "SCTP"}
 	summaryMap := make(map[string]PortProtocolSummary)
 	analyticsRecords := make([]AnalyticsRecord, 0, len(aggregatedFlows))
 	for _, entry := range aggregatedFlows {
@@ -1707,9 +1794,29 @@ func runExtraction(ctx context.Context, cfg Config) {
 		return summary[i].Protocol < summary[j].Protocol
 	})
 
+	monthlySummaries := make([]MonthlyPortProtocolSummary, 0, len(monthlySummaryMap))
+	for _, item := range monthlySummaryMap {
+		monthlySummaries = append(monthlySummaries, item)
+	}
+	sort.Slice(monthlySummaries, func(i, j int) bool {
+		if monthlySummaries[i].Month != monthlySummaries[j].Month {
+			return monthlySummaries[i].Month > monthlySummaries[j].Month
+		}
+		if monthlySummaries[i].FlowCount != monthlySummaries[j].FlowCount {
+			return monthlySummaries[i].FlowCount > monthlySummaries[j].FlowCount
+		}
+		if monthlySummaries[i].Protocol != monthlySummaries[j].Protocol {
+			return monthlySummaries[i].Protocol < monthlySummaries[j].Protocol
+		}
+		return monthlySummaries[i].Port < monthlySummaries[j].Port
+	})
+
+	insights := buildInsights(analyticsRecords)
+	insights.MonthlyPortProtocol = monthlySummaries
+
 	state.Mu.Lock()
 	state.LastSummary = summary
-	state.LastInsights = buildInsights(analyticsRecords)
+	state.LastInsights = insights
 	state.Mu.Unlock()
 
 	addLog(fmt.Sprintf("SUCCESS: Final data saved to %s", finalPath))
