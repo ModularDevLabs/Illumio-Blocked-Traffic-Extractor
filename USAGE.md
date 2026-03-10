@@ -76,6 +76,7 @@ Available analytics views:
 -   External / unmanaged traffic summaries
 
 Notes:
+-   Each major section on `/summary` can be collapsed or expanded independently. The page remembers your section state in the browser.
 -   Heatmaps exclude the `External/Unmanaged` bucket by default so labeled relationships are easier to read.
 -   Labeled unmanaged endpoints are grouped by their actual labels where possible.
 

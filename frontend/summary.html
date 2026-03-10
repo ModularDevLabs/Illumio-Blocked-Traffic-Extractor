@@ -85,6 +85,20 @@
         body[data-theme="illumio-light"] [class*="text-gray-200"] {
             color: var(--muted) !important;
         }
+        .collapse-toggle {
+            border: 1px solid var(--border);
+            background: color-mix(in srgb, var(--panel-soft) 88%, transparent);
+            color: var(--text);
+        }
+        .collapse-toggle:hover {
+            border-color: var(--accent);
+        }
+        .collapse-icon {
+            transition: transform 0.2s ease;
+        }
+        .is-collapsed .collapse-icon {
+            transform: rotate(-90deg);
+        }
     </style>
 </head>
 <body data-theme="default" class="min-h-screen p-6 md:p-10">
@@ -126,113 +140,161 @@
         </div>
 
         <div id="dashboard" class="hidden space-y-8">
-            <div class="grid gap-4 md:grid-cols-4">
-                <div class="rounded-2xl border border-gray-800 bg-gray-900 p-5">
-                    <p class="text-xs uppercase tracking-widest text-gray-500">Port / Protocol Rows</p>
-                    <p id="rowCount" class="mt-2 text-3xl font-bold text-cyan-400">0</p>
+            <section class="space-y-4 rounded-2xl border panel p-5" data-collapsible="overview">
+                <div class="flex items-center justify-between gap-4">
+                    <div>
+                        <h2 class="text-xl font-bold text-cyan-300">Overview</h2>
+                        <p class="text-xs uppercase tracking-widest text-gray-500">Current analytics snapshot</p>
+                    </div>
+                    <button type="button" class="collapse-toggle inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em]" data-collapse-toggle>
+                        <span data-collapse-label>Collapse</span>
+                        <span class="collapse-icon text-sm">▾</span>
+                    </button>
                 </div>
-                <div class="rounded-2xl border border-gray-800 bg-gray-900 p-5">
-                    <p class="text-xs uppercase tracking-widest text-gray-500">Total Flows</p>
-                    <p id="totalFlows" class="mt-2 text-3xl font-bold text-emerald-400">0</p>
+                <div class="grid gap-4 md:grid-cols-4" data-collapsible-content>
+                    <div class="rounded-2xl border border-gray-800 bg-gray-900 p-5">
+                        <p class="text-xs uppercase tracking-widest text-gray-500">Port / Protocol Rows</p>
+                        <p id="rowCount" class="mt-2 text-3xl font-bold text-cyan-400">0</p>
+                    </div>
+                    <div class="rounded-2xl border border-gray-800 bg-gray-900 p-5">
+                        <p class="text-xs uppercase tracking-widest text-gray-500">Total Flows</p>
+                        <p id="totalFlows" class="mt-2 text-3xl font-bold text-emerald-400">0</p>
+                    </div>
+                    <div class="rounded-2xl border border-gray-800 bg-gray-900 p-5">
+                        <p class="text-xs uppercase tracking-widest text-gray-500">Unique Connections</p>
+                        <p id="totalConnections" class="mt-2 text-3xl font-bold text-amber-300">0</p>
+                    </div>
+                    <div class="rounded-2xl border border-gray-800 bg-gray-900 p-5">
+                        <p class="text-xs uppercase tracking-widest text-gray-500">Env Matrix Pairs</p>
+                        <p id="envPairCount" class="mt-2 text-3xl font-bold text-fuchsia-300">0</p>
+                    </div>
                 </div>
-                <div class="rounded-2xl border border-gray-800 bg-gray-900 p-5">
-                    <p class="text-xs uppercase tracking-widest text-gray-500">Unique Connections</p>
-                    <p id="totalConnections" class="mt-2 text-3xl font-bold text-amber-300">0</p>
-                </div>
-                <div class="rounded-2xl border border-gray-800 bg-gray-900 p-5">
-                    <p class="text-xs uppercase tracking-widest text-gray-500">Env Matrix Pairs</p>
-                    <p id="envPairCount" class="mt-2 text-3xl font-bold text-fuchsia-300">0</p>
-                </div>
-            </div>
+            </section>
 
-            <section class="space-y-4">
-                <div class="flex items-center justify-between">
-                    <h2 class="text-xl font-bold text-cyan-300">Port / Protocol Summary</h2>
-                    <p class="text-xs uppercase tracking-widest text-gray-500">Latest run aggregate</p>
+            <section class="space-y-4 rounded-2xl border panel p-5" data-collapsible="port-summary">
+                <div class="flex items-center justify-between gap-4">
+                    <div>
+                        <h2 class="text-xl font-bold text-cyan-300">Port / Protocol Summary</h2>
+                        <p class="text-xs uppercase tracking-widest text-gray-500">Latest run aggregate</p>
+                    </div>
+                    <button type="button" class="collapse-toggle inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em]" data-collapse-toggle>
+                        <span data-collapse-label>Collapse</span>
+                        <span class="collapse-icon text-sm">▾</span>
+                    </button>
                 </div>
-                <div class="overflow-hidden rounded-2xl border border-gray-800 bg-gray-900">
-                    <table class="min-w-full divide-y divide-gray-800">
-                        <thead class="bg-gray-900/80">
-                            <tr class="text-left text-xs uppercase tracking-widest text-gray-500">
-                                <th class="px-5 py-4">Port</th>
-                                <th class="px-5 py-4">Protocol</th>
-                                <th class="px-5 py-4">Flows</th>
-                                <th class="px-5 py-4">Unique Connections</th>
-                            </tr>
-                        </thead>
-                        <tbody id="portSummaryBody" class="divide-y divide-gray-800 text-sm"></tbody>
-                    </table>
+                <div data-collapsible-content>
+                    <div class="overflow-hidden rounded-2xl border border-gray-800 bg-gray-900">
+                        <table class="min-w-full divide-y divide-gray-800">
+                            <thead class="bg-gray-900/80">
+                                <tr class="text-left text-xs uppercase tracking-widest text-gray-500">
+                                    <th class="px-5 py-4">Port</th>
+                                    <th class="px-5 py-4">Protocol</th>
+                                    <th class="px-5 py-4">Flows</th>
+                                    <th class="px-5 py-4">Unique Connections</th>
+                                </tr>
+                            </thead>
+                            <tbody id="portSummaryBody" class="divide-y divide-gray-800 text-sm"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <section class="space-y-4 rounded-2xl border panel p-5" data-collapsible="heatmaps">
+                <div class="flex items-center justify-between gap-4">
+                    <div>
+                        <h2 class="text-xl font-bold text-sky-300">Heatmap Matrices</h2>
+                        <p class="text-xs uppercase tracking-widest text-gray-500">Visual flow intensity</p>
+                    </div>
+                    <button type="button" class="collapse-toggle inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em]" data-collapse-toggle>
+                        <span data-collapse-label>Collapse</span>
+                        <span class="collapse-icon text-sm">▾</span>
+                    </button>
+                </div>
+                <div class="grid gap-8 xl:grid-cols-2" data-collapsible-content>
+                    <div class="rounded-2xl border border-gray-800 bg-gray-900 p-4">
+                        <h3 class="mb-3 text-sm font-semibold text-gray-300">Environment Heatmap</h3>
+                        <p class="mb-3 text-xs text-gray-500">Showing labeled environment relationships only.</p>
+                        <div id="envHeatmap" class="overflow-auto"></div>
+                    </div>
+                    <div class="rounded-2xl border border-gray-800 bg-gray-900 p-4">
+                        <h3 class="mb-3 text-sm font-semibold text-gray-300">App Heatmap</h3>
+                        <p class="mb-3 text-xs text-gray-500">Showing labeled application relationships only.</p>
+                        <div id="appHeatmap" class="overflow-auto"></div>
+                    </div>
                 </div>
             </section>
 
             <div class="grid gap-8 xl:grid-cols-2">
-                <section class="space-y-4 xl:col-span-2">
-                    <div class="flex items-center justify-between">
-                        <h2 class="text-xl font-bold text-sky-300">Heatmap Matrices</h2>
-                        <p class="text-xs uppercase tracking-widest text-gray-500">Visual flow intensity</p>
-                    </div>
-                    <div class="grid gap-8 xl:grid-cols-2">
-                        <div class="rounded-2xl border border-gray-800 bg-gray-900 p-4">
-                            <h3 class="mb-3 text-sm font-semibold text-gray-300">Environment Heatmap</h3>
-                            <p class="mb-3 text-xs text-gray-500">Showing labeled environment relationships only.</p>
-                            <div id="envHeatmap" class="overflow-auto"></div>
+                <section class="space-y-4 rounded-2xl border panel p-5" data-collapsible="env-matrix">
+                    <div class="flex items-center justify-between gap-4">
+                        <div>
+                            <h2 class="text-xl font-bold text-fuchsia-300">Environment Cross-Talk</h2>
+                            <p class="text-xs uppercase tracking-widest text-gray-500">Src Env -> Dst Env</p>
                         </div>
-                        <div class="rounded-2xl border border-gray-800 bg-gray-900 p-4">
-                            <h3 class="mb-3 text-sm font-semibold text-gray-300">App Heatmap</h3>
-                            <p class="mb-3 text-xs text-gray-500">Showing labeled application relationships only.</p>
-                            <div id="appHeatmap" class="overflow-auto"></div>
+                        <button type="button" class="collapse-toggle inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em]" data-collapse-toggle>
+                            <span data-collapse-label>Collapse</span>
+                            <span class="collapse-icon text-sm">▾</span>
+                        </button>
+                    </div>
+                    <div data-collapsible-content>
+                        <div class="overflow-hidden rounded-2xl border border-gray-800 bg-gray-900">
+                            <table class="min-w-full divide-y divide-gray-800">
+                                <thead class="bg-gray-900/80">
+                                    <tr class="text-left text-xs uppercase tracking-widest text-gray-500">
+                                        <th class="px-5 py-4">Source</th>
+                                        <th class="px-5 py-4">Destination</th>
+                                        <th class="px-5 py-4">Flows</th>
+                                        <th class="px-5 py-4">Unique Connections</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="envMatrixBody" class="divide-y divide-gray-800 text-sm"></tbody>
+                            </table>
                         </div>
                     </div>
                 </section>
 
-                <section class="space-y-4">
-                    <div class="flex items-center justify-between">
-                        <h2 class="text-xl font-bold text-fuchsia-300">Environment Cross-Talk</h2>
-                        <p class="text-xs uppercase tracking-widest text-gray-500">Src Env -> Dst Env</p>
+                <section class="space-y-4 rounded-2xl border panel p-5" data-collapsible="app-matrix">
+                    <div class="flex items-center justify-between gap-4">
+                        <div>
+                            <h2 class="text-xl font-bold text-violet-300">App-to-App Matrix</h2>
+                            <p class="text-xs uppercase tracking-widest text-gray-500">Src App -> Dst App</p>
+                        </div>
+                        <button type="button" class="collapse-toggle inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em]" data-collapse-toggle>
+                            <span data-collapse-label>Collapse</span>
+                            <span class="collapse-icon text-sm">▾</span>
+                        </button>
                     </div>
-                    <div class="overflow-hidden rounded-2xl border border-gray-800 bg-gray-900">
-                        <table class="min-w-full divide-y divide-gray-800">
-                            <thead class="bg-gray-900/80">
-                                <tr class="text-left text-xs uppercase tracking-widest text-gray-500">
-                                    <th class="px-5 py-4">Source</th>
-                                    <th class="px-5 py-4">Destination</th>
-                                    <th class="px-5 py-4">Flows</th>
-                                    <th class="px-5 py-4">Unique Connections</th>
-                                </tr>
-                            </thead>
-                            <tbody id="envMatrixBody" class="divide-y divide-gray-800 text-sm"></tbody>
-                        </table>
-                    </div>
-                </section>
-
-                <section class="space-y-4">
-                    <div class="flex items-center justify-between">
-                        <h2 class="text-xl font-bold text-violet-300">App-to-App Matrix</h2>
-                        <p class="text-xs uppercase tracking-widest text-gray-500">Src App -> Dst App</p>
-                    </div>
-                    <div class="overflow-hidden rounded-2xl border border-gray-800 bg-gray-900">
-                        <table class="min-w-full divide-y divide-gray-800">
-                            <thead class="bg-gray-900/80">
-                                <tr class="text-left text-xs uppercase tracking-widest text-gray-500">
-                                    <th class="px-5 py-4">Source</th>
-                                    <th class="px-5 py-4">Destination</th>
-                                    <th class="px-5 py-4">Flows</th>
-                                    <th class="px-5 py-4">Unique Connections</th>
-                                </tr>
-                            </thead>
-                            <tbody id="appMatrixBody" class="divide-y divide-gray-800 text-sm"></tbody>
-                        </table>
+                    <div data-collapsible-content>
+                        <div class="overflow-hidden rounded-2xl border border-gray-800 bg-gray-900">
+                            <table class="min-w-full divide-y divide-gray-800">
+                                <thead class="bg-gray-900/80">
+                                    <tr class="text-left text-xs uppercase tracking-widest text-gray-500">
+                                        <th class="px-5 py-4">Source</th>
+                                        <th class="px-5 py-4">Destination</th>
+                                        <th class="px-5 py-4">Flows</th>
+                                        <th class="px-5 py-4">Unique Connections</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="appMatrixBody" class="divide-y divide-gray-800 text-sm"></tbody>
+                            </table>
+                        </div>
                     </div>
                 </section>
             </div>
 
             <div class="grid gap-8 xl:grid-cols-2">
-                <section class="space-y-4">
-                    <div class="flex items-center justify-between">
-                        <h2 class="text-xl font-bold text-emerald-300">Top Talkers</h2>
-                        <p class="text-xs uppercase tracking-widest text-gray-500">Highest flow concentrations</p>
+                <section class="space-y-4 rounded-2xl border panel p-5" data-collapsible="top-talkers">
+                    <div class="flex items-center justify-between gap-4">
+                        <div>
+                            <h2 class="text-xl font-bold text-emerald-300">Top Talkers</h2>
+                            <p class="text-xs uppercase tracking-widest text-gray-500">Highest flow concentrations</p>
+                        </div>
+                        <button type="button" class="collapse-toggle inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em]" data-collapse-toggle>
+                            <span data-collapse-label>Collapse</span>
+                            <span class="collapse-icon text-sm">▾</span>
+                        </button>
                     </div>
-                    <div class="grid gap-4 md:grid-cols-2">
+                    <div class="grid gap-4 md:grid-cols-2" data-collapsible-content>
                         <div class="rounded-2xl border border-gray-800 bg-gray-900 p-4">
                             <h3 class="mb-3 text-sm font-semibold text-gray-300">Top Source Environments</h3>
                             <div id="topSourceEnvs" class="space-y-2"></div>
@@ -256,12 +318,18 @@
                     </div>
                 </section>
 
-                <section class="space-y-4">
-                    <div class="flex items-center justify-between">
-                        <h2 class="text-xl font-bold text-amber-300">Unmanaged / External Summary</h2>
-                        <p class="text-xs uppercase tracking-widest text-gray-500">Traffic boundary view</p>
+                <section class="space-y-4 rounded-2xl border panel p-5" data-collapsible="external-summary">
+                    <div class="flex items-center justify-between gap-4">
+                        <div>
+                            <h2 class="text-xl font-bold text-amber-300">Unmanaged / External Summary</h2>
+                            <p class="text-xs uppercase tracking-widest text-gray-500">Traffic boundary view</p>
+                        </div>
+                        <button type="button" class="collapse-toggle inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em]" data-collapse-toggle>
+                            <span data-collapse-label>Collapse</span>
+                            <span class="collapse-icon text-sm">▾</span>
+                        </button>
                     </div>
-                    <div class="space-y-4">
+                    <div class="space-y-4" data-collapsible-content>
                         <div class="rounded-2xl border border-gray-800 bg-gray-900 p-4">
                             <div id="trafficCategories" class="space-y-3"></div>
                         </div>
@@ -286,6 +354,31 @@
 
         function loadSavedTheme() {
             applyTheme(localStorage.getItem('ittTheme') || 'default');
+        }
+
+        function applyCollapsedState(section, collapsed) {
+            const content = section.querySelector('[data-collapsible-content]');
+            const label = section.querySelector('[data-collapse-label]');
+            if (!content || !label) return;
+            section.classList.toggle('is-collapsed', collapsed);
+            content.classList.toggle('hidden', collapsed);
+            label.innerText = collapsed ? 'Expand' : 'Collapse';
+        }
+
+        function initializeCollapsibles() {
+            document.querySelectorAll('[data-collapsible]').forEach((section) => {
+                const key = section.dataset.collapsible;
+                const toggle = section.querySelector('[data-collapse-toggle]');
+                const saved = localStorage.getItem(`ittCollapse:${key}`);
+                applyCollapsedState(section, saved === 'true');
+                if (!toggle || toggle.dataset.bound === 'true') return;
+                toggle.dataset.bound = 'true';
+                toggle.addEventListener('click', () => {
+                    const collapsed = !section.classList.contains('is-collapsed');
+                    applyCollapsedState(section, collapsed);
+                    localStorage.setItem(`ittCollapse:${key}`, collapsed ? 'true' : 'false');
+                });
+            });
         }
 
         function formatNumber(value) {
@@ -554,6 +647,7 @@
 
         window.onload = () => {
             loadSavedTheme();
+            initializeCollapsibles();
             loadSummary();
         };
     </script>
