@@ -12,6 +12,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -368,7 +369,53 @@ func saveProfiles() {
 	state.Mu.Lock()
 	data, _ := json.MarshalIndent(state.Profiles, "", "  ")
 	state.Mu.Unlock()
-	os.WriteFile(getConfigPath(), data, 0644)
+	if err := os.WriteFile(getConfigPath(), data, 0600); err != nil {
+		log.Printf("failed to write profile store: %v", err)
+	}
+}
+
+func writeJSONError(w http.ResponseWriter, status int, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": false,
+		"error":   message,
+	})
+}
+
+func requireMethod(w http.ResponseWriter, r *http.Request, method string) bool {
+	if r.Method == method {
+		return true
+	}
+	w.Header().Set("Allow", method)
+	writeJSONError(w, http.StatusMethodNotAllowed, fmt.Sprintf("method %s not allowed", r.Method))
+	return false
+}
+
+func sameOriginRequest(r *http.Request) bool {
+	candidates := []string{r.Header.Get("Origin"), r.Header.Get("Referer")}
+	for _, raw := range candidates {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			continue
+		}
+		parsed, err := url.Parse(raw)
+		if err != nil {
+			return false
+		}
+		if !strings.EqualFold(parsed.Host, r.Host) {
+			return false
+		}
+	}
+	return true
+}
+
+func requireSameOrigin(w http.ResponseWriter, r *http.Request) bool {
+	if sameOriginRequest(r) {
+		return true
+	}
+	writeJSONError(w, http.StatusForbidden, "cross-origin request rejected")
+	return false
 }
 
 func envOrDefault(key, fallback string) string {
@@ -407,21 +454,37 @@ func main() {
 	flag.Parse()
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
 		data, _ := staticFiles.ReadFile("frontend/index.html")
 		w.Header().Set("Content-Type", "text/html")
 		w.Write(data)
 	})
 	http.HandleFunc("/summary", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
 		data, _ := staticFiles.ReadFile("frontend/summary.html")
 		w.Header().Set("Content-Type", "text/html")
 		w.Write(data)
 	})
 	http.HandleFunc("/executive-summary", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
 		data, _ := staticFiles.ReadFile("frontend/executive-summary.html")
 		w.Header().Set("Content-Type", "text/html")
 		w.Write(data)
 	})
 	http.HandleFunc("/heatmaps", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
 		data, _ := staticFiles.ReadFile("frontend/heatmaps.html")
 		w.Header().Set("Content-Type", "text/html")
 		w.Write(data)
@@ -436,6 +499,9 @@ func main() {
 	http.HandleFunc("/api/results/import-csv", handleImportCSV)
 
 	http.HandleFunc("/api/profiles/get", func(w http.ResponseWriter, r *http.Request) {
+		if !requireMethod(w, r, http.MethodGet) {
+			return
+		}
 		state.Mu.Lock()
 		json.NewEncoder(w).Encode(state.Profiles)
 		state.Mu.Unlock()
@@ -464,9 +530,12 @@ func main() {
 }
 
 func handleDiscovery(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) || !requireSameOrigin(w, r) {
+		return
+	}
 	var cfg Config
 	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
-		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
+		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	const discoveryTimeout = 15 * time.Minute
@@ -480,7 +549,7 @@ func handleDiscovery(w http.ResponseWriter, r *http.Request) {
 		if errors.Is(err, context.DeadlineExceeded) {
 			err = fmt.Errorf("discovery timed out after %s while loading large policy collections; no new discovery cache was saved", discoveryTimeout)
 		}
-		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
+		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -531,6 +600,9 @@ func handleDiscovery(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleCancel(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) || !requireSameOrigin(w, r) {
+		return
+	}
 	var cancel context.CancelFunc
 	state.Mu.Lock()
 	if state.CancelFunc != nil {
@@ -546,10 +618,16 @@ func handleCancel(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleSaveProfile(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) || !requireSameOrigin(w, r) {
+		return
+	}
 	var prof PCEProfile
-	json.NewDecoder(r.Body).Decode(&prof)
+	if err := json.NewDecoder(r.Body).Decode(&prof); err != nil {
+		writeJSONError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	if prof.Name == "" {
-		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Profile name required"})
+		writeJSONError(w, http.StatusBadRequest, "profile name required")
 		return
 	}
 	state.Mu.Lock()
@@ -560,10 +638,16 @@ func handleSaveProfile(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleDeleteProfile(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) || !requireSameOrigin(w, r) {
+		return
+	}
 	var req struct {
 		Name string `json:"name"`
 	}
-	json.NewDecoder(r.Body).Decode(&req)
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	state.Mu.Lock()
 	delete(state.Profiles, req.Name)
 	state.Mu.Unlock()
@@ -589,8 +673,14 @@ type Config struct {
 }
 
 func handleTest(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) || !requireSameOrigin(w, r) {
+		return
+	}
 	var cfg Config
-	json.NewDecoder(r.Body).Decode(&cfg)
+	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
+		writeJSONError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 
@@ -604,6 +694,9 @@ func handleTest(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleStatus(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
 	state.Mu.Lock()
 	defer state.Mu.Unlock()
 
@@ -621,6 +714,9 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleSummary(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
 	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
 	w.Header().Set("Pragma", "no-cache")
 	w.Header().Set("Expires", "0")
@@ -956,6 +1052,9 @@ func parseCSVAnalytics(reader io.Reader) ([]PortProtocolSummary, AnalyticsInsigh
 }
 
 func handleImportCSV(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) || !requireSameOrigin(w, r) {
+		return
+	}
 	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
 	w.Header().Set("Pragma", "no-cache")
 	w.Header().Set("Expires", "0")
@@ -993,14 +1092,17 @@ func handleImportCSV(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleStart(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) || !requireSameOrigin(w, r) {
+		return
+	}
 	var cfg Config
 	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
-		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
+		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	_, _, requestedDays, err := extractionDateRange(cfg, time.Now().UTC())
 	if err != nil {
-		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
+		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 

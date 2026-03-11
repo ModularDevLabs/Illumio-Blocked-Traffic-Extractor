@@ -27,12 +27,14 @@ Notes:
 -   Use `-port <number>` to choose the hosted port.
 -   Use `-open-browser=false` for server deployments.
 -   After startup, users can browse to `http://<server-ip-or-dns>:<port>`.
+-   State-changing browser actions now require same-origin requests and expected HTTP methods. Normal in-app use is unchanged, but cross-site or malformed requests are rejected.
 
 ## 3. Managing PCE Profiles
 The tool allows you to save credentials for multiple Illumio environments.
 -   **To Save a Profile:** Enter your PCE URL, Org ID, API Key, and Secret. Enter a name in the "New Profile Name" field and click **Save Current Config**.
 -   **To Load a Profile:** Select the desired PCE from the dropdown menu.
 -   **To Delete a Profile:** Select the profile from the dropdown and click **Delete**.
+-   **Credential Storage:** Saved profiles are written to the local `pce_profiles.json` file with owner-only permissions on supported systems.
 
 Discovery notes:
 -   **Load Policy Objects from PCE** now uses Illumio's asynchronous collection workflow so it can load full collections from larger PCEs instead of stopping at the first 500 objects.

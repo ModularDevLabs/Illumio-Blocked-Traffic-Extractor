@@ -8,8 +8,10 @@ To provide a stable, cross-platform standalone tool that extracts "Reported Poli
 - **UI:** Embedded Web Interface (HTML/JS/Tailwind) served via a local Go web server.
 - **Themes:** The extractor, analytics dashboard, and executive summary share a browser-persisted theme selection with `Dark`, `Illumio Dark`, and `Illumio Light` options.
 - **Hosting Model:** Runs either locally on `127.0.0.1:8080` by default or as a centrally hosted web service via configurable host/port flags and env vars.
+- **Request Hardening:** State-changing API routes enforce expected HTTP methods and reject cross-origin browser requests to reduce CSRF-style misuse.
 - **Portability:** 100% Go implementation (no CGO) to ensure flawless cross-compilation from a single build environment.
 - **Persistence:** Local JSON file (`pce_profiles.json`) stores PCE credentials and query configurations.
+- **Local Credential File Permissions:** The profile store is written with owner-only permissions to reduce local credential exposure on multi-user systems.
 
 ## 3. Core Features
 ### 3.1. Policy Object Discovery

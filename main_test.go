@@ -1,6 +1,8 @@
 package main
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"testing"
 	"time"
@@ -239,5 +241,43 @@ func TestMonthlyPortProtocolFromRecordsTracksActiveConnectionsAcrossMonths(t *te
 	}
 	if byMonth["2026-03"].FlowCount != 0 || byMonth["2026-03"].UniqueConnections != 0 || byMonth["2026-03"].ActiveConnections != 1 {
 		t.Fatalf("march row = %#v, want flow 0 unique 0 active 1", byMonth["2026-03"])
+	}
+}
+
+func TestSameOriginRequest(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		host    string
+		origin  string
+		referer string
+		want    bool
+	}{
+		{name: "no headers allowed", host: "localhost:8080", want: true},
+		{name: "matching origin allowed", host: "localhost:8080", origin: "http://localhost:8080", want: true},
+		{name: "matching referer allowed", host: "localhost:8080", referer: "http://localhost:8080/summary", want: true},
+		{name: "mismatched origin rejected", host: "localhost:8080", origin: "http://evil.example", want: false},
+		{name: "mismatched referer rejected", host: "localhost:8080", referer: "http://evil.example/form", want: false},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			req := httptest.NewRequest(http.MethodPost, "http://"+tt.host+"/api/start", nil)
+			req.Host = tt.host
+			if tt.origin != "" {
+				req.Header.Set("Origin", tt.origin)
+			}
+			if tt.referer != "" {
+				req.Header.Set("Referer", tt.referer)
+			}
+
+			if got := sameOriginRequest(req); got != tt.want {
+				t.Fatalf("sameOriginRequest() = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
