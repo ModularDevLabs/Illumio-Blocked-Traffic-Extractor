@@ -683,8 +683,8 @@
             document.getElementById('latestMonthLabel').innerText = latest ? latest.month : 'No monthly data';
             document.getElementById('latestMonthActive').innerText = latest ? formatNumber(latest.active_connections) : '0';
             document.getElementById('latestMonthActiveLabel').innerText = latest ? `${latest.month} month-spanning activity` : 'Persistence across month spans';
-            document.getElementById('monthOverMonthFlows').innerText = latest && previous ? signedPercentageChange(latest.flows, previous.flows) : '0.0%';
-            document.getElementById('monthOverMonthFlowsLabel').innerText = latest && previous ? `${previous.month} to ${latest.month}` : 'Compared with previous month';
+            document.getElementById('monthOverMonthFlows').innerText = latest && previous ? signedPercentageChange(latest.flows, previous.flows) : 'N/A';
+            document.getElementById('monthOverMonthFlowsLabel').innerText = latest && previous ? `${previous.month} to ${latest.month}` : 'Only one month loaded';
             document.getElementById('newServicePairs').innerText = latestChange.latest ? formatNumber(latestChange.newRows.length) : '0';
             document.getElementById('newServicePairsLabel').innerText = latestChange.latest ? `First seen in ${latestChange.latest.month}` : 'Port/protocol pairs first seen in the latest month';
         }
