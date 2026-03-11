@@ -173,6 +173,23 @@
             background: var(--accent-soft);
             color: var(--accent);
         }
+
+        .metric-value {
+            font-size: clamp(1.85rem, 2.2vw, 2.75rem);
+            line-height: 1.05;
+            letter-spacing: -0.04em;
+            font-variant-numeric: tabular-nums;
+            overflow-wrap: anywhere;
+        }
+
+        .metric-value-sm {
+            font-size: clamp(1.6rem, 1.8vw, 2.1rem);
+            line-height: 1.08;
+            letter-spacing: -0.03em;
+            font-variant-numeric: tabular-nums;
+            overflow-wrap: anywhere;
+        }
+
         a.panel-soft, button.panel-soft {
             color: var(--text) !important;
         }
@@ -218,23 +235,23 @@
             <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
                 <div class="panel-soft rounded-2xl p-5">
                     <p class="label">Total Blocked Flows</p>
-                    <p id="totalFlows" class="metric-accent mt-3 text-4xl font-extrabold">0</p>
+                    <p id="totalFlows" class="metric-accent metric-value mt-3 font-extrabold">0</p>
                 </div>
                 <div class="panel-soft rounded-2xl p-5">
                     <p class="label">Unique Connections</p>
-                    <p id="totalConnections" class="metric-secondary mt-3 text-4xl font-extrabold">0</p>
+                    <p id="totalConnections" class="metric-secondary metric-value mt-3 font-extrabold">0</p>
                 </div>
                 <div class="panel-soft rounded-2xl p-5">
                     <p class="label">Environments Involved</p>
-                    <p id="environmentCount" class="metric-tertiary mt-3 text-4xl font-extrabold">0</p>
+                    <p id="environmentCount" class="metric-tertiary metric-value mt-3 font-extrabold">0</p>
                 </div>
                 <div class="panel-soft rounded-2xl p-5">
                     <p class="label">External / Unmanaged Flows</p>
-                    <p id="externalFlowCount" class="metric-warning mt-3 text-4xl font-extrabold">0</p>
+                    <p id="externalFlowCount" class="metric-warning metric-value mt-3 font-extrabold">0</p>
                 </div>
                 <div class="panel-soft rounded-2xl p-5">
                     <p class="label">Top Risky Service</p>
-                    <p id="topRiskyService" class="metric-danger mt-3 text-2xl font-extrabold">N/A</p>
+                    <p id="topRiskyService" class="metric-danger metric-value-sm mt-3 font-extrabold">N/A</p>
                     <p id="topRiskyServiceFlows" class="muted mt-2 text-sm">0 flows</p>
                 </div>
             </div>
@@ -250,25 +267,25 @@
                 <div class="panel rounded-3xl p-5">
                     <p class="label">Latest Month</p>
                     <h2 class="headline mt-2 text-lg font-bold">Observed Flows</h2>
-                    <p id="latestMonthFlows" class="metric-accent mt-4 text-3xl font-extrabold">0</p>
+                    <p id="latestMonthFlows" class="metric-accent metric-value-sm mt-4 font-extrabold">0</p>
                     <p id="latestMonthLabel" class="muted mt-2 text-sm">No monthly data</p>
                 </div>
                 <div class="panel rounded-3xl p-5">
                     <p class="label">Latest Month</p>
                     <h2 class="headline mt-2 text-lg font-bold">Active Connections</h2>
-                    <p id="latestMonthActive" class="metric-secondary mt-4 text-3xl font-extrabold">0</p>
+                    <p id="latestMonthActive" class="metric-secondary metric-value-sm mt-4 font-extrabold">0</p>
                     <p id="latestMonthActiveLabel" class="muted mt-2 text-sm">Persistence across month spans</p>
                 </div>
                 <div class="panel rounded-3xl p-5">
                     <p class="label">Month over Month</p>
                     <h2 class="headline mt-2 text-lg font-bold">Flow Change</h2>
-                    <p id="monthOverMonthFlows" class="metric-tertiary mt-4 text-3xl font-extrabold">0%</p>
+                    <p id="monthOverMonthFlows" class="metric-tertiary metric-value-sm mt-4 font-extrabold">0%</p>
                     <p id="monthOverMonthFlowsLabel" class="muted mt-2 text-sm">Compared with previous month</p>
                 </div>
                 <div class="panel rounded-3xl p-5">
                     <p class="label">What Changed</p>
                     <h2 class="headline mt-2 text-lg font-bold">New Service Pairs</h2>
-                    <p id="newServicePairs" class="metric-warning mt-4 text-3xl font-extrabold">0</p>
+                    <p id="newServicePairs" class="metric-warning metric-value-sm mt-4 font-extrabold">0</p>
                     <p id="newServicePairsLabel" class="muted mt-2 text-sm">Port/protocol pairs first seen in the latest month</p>
                 </div>
             </section>
