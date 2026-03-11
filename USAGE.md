@@ -81,6 +81,7 @@ Available analytics views:
 Notes:
 -   Each major section on `/summary` can be collapsed or expanded independently. The page remembers your section state in the browser.
 -   The monthly breakdown groups blocked flows by `YYYY-MM` and then shows the protocol/port rows contributing to each month.
+-   `Flows` reflects observed monthly volume. `Unique Connections` reflects connections with observed traffic in that month. `Active Connections` reflects connections whose first/last detected span includes that month, even if the observed flow volume was concentrated in a different month.
 -   The environment service pivot lets you select one or more source environments and see destination-environment flow totals broken out by protocol and port.
 -   Heatmaps exclude the `External/Unmanaged` bucket by default so labeled relationships are easier to read.
 -   Labeled unmanaged endpoints are grouped by their actual labels where possible.

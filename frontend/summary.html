@@ -209,7 +209,7 @@
                 <div class="flex items-center justify-between gap-4">
                     <div>
                         <h2 class="text-xl font-bold text-amber-300">Monthly Port / Protocol Breakdown</h2>
-                        <p class="text-xs uppercase tracking-widest text-gray-500">Flows grouped by month across the loaded dataset</p>
+                        <p class="text-xs uppercase tracking-widest text-gray-500">Observed monthly flows plus connection persistence across month spans</p>
                     </div>
                     <button type="button" class="collapse-toggle inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em]" data-collapse-toggle>
                         <span data-collapse-label>Collapse</span>
@@ -610,7 +610,7 @@
                         </div>
                         <div class="text-right">
                             <div class="text-sm font-semibold text-emerald-300">${formatNumber(totalFlows)} flows</div>
-                            <div class="text-xs text-amber-200">${formatNumber(totalConnections)} unique connections</div>
+                            <div class="text-xs text-amber-200">${formatNumber(totalConnections)} unique connections with observed traffic</div>
                         </div>
                     </div>
                     <table class="min-w-full divide-y divide-gray-800">
@@ -620,6 +620,7 @@
                                 <th class="px-5 py-4">Port</th>
                                 <th class="px-5 py-4">Flows</th>
                                 <th class="px-5 py-4">Unique Connections</th>
+                                <th class="px-5 py-4">Active Connections</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-gray-800 text-sm">
@@ -629,6 +630,7 @@
                                     <td class="px-5 py-4" style="color: var(--text);">${formatPort(row.port)}</td>
                                     <td class="px-5 py-4 text-emerald-300">${formatNumber(row.flow_count)}</td>
                                     <td class="px-5 py-4 text-amber-200">${formatNumber(row.unique_connections)}</td>
+                                    <td class="px-5 py-4 text-sky-300">${formatNumber(row.active_connections)}</td>
                                 </tr>
                             `).join('')}
                         </tbody>

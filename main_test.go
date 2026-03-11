@@ -206,3 +206,38 @@ func TestExtractionDateRange(t *testing.T) {
 		}
 	})
 }
+
+func TestMonthlyPortProtocolFromRecordsTracksActiveConnectionsAcrossMonths(t *testing.T) {
+	t.Parallel()
+
+	records := []AnalyticsRecord{
+		{
+			Protocol:  "TCP",
+			Port:      5985,
+			Month:     "2026-01",
+			FlowCount: 90,
+			FirstSeen: time.Date(2026, time.January, 15, 0, 0, 0, 0, time.UTC),
+			LastSeen:  time.Date(2026, time.March, 3, 0, 0, 0, 0, time.UTC),
+		},
+	}
+
+	got := monthlyPortProtocolFromRecords(records)
+	if len(got) != 3 {
+		t.Fatalf("monthlyPortProtocolFromRecords returned %d rows, want 3", len(got))
+	}
+
+	byMonth := map[string]MonthlyPortProtocolSummary{}
+	for _, row := range got {
+		byMonth[row.Month] = row
+	}
+
+	if byMonth["2026-01"].FlowCount != 90 || byMonth["2026-01"].UniqueConnections != 1 || byMonth["2026-01"].ActiveConnections != 1 {
+		t.Fatalf("january row = %#v, want flow 90 unique 1 active 1", byMonth["2026-01"])
+	}
+	if byMonth["2026-02"].FlowCount != 0 || byMonth["2026-02"].UniqueConnections != 0 || byMonth["2026-02"].ActiveConnections != 1 {
+		t.Fatalf("february row = %#v, want flow 0 unique 0 active 1", byMonth["2026-02"])
+	}
+	if byMonth["2026-03"].FlowCount != 0 || byMonth["2026-03"].UniqueConnections != 0 || byMonth["2026-03"].ActiveConnections != 1 {
+		t.Fatalf("march row = %#v, want flow 0 unique 0 active 1", byMonth["2026-03"])
+	}
+}

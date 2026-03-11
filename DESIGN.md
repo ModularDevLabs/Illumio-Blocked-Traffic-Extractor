@@ -47,7 +47,7 @@ To provide a stable, cross-platform standalone tool that extracts "Reported Poli
 - **Presentation Themes:** The application supports shared dark and Illumio-inspired dark/light palettes without changing the underlying analytics dataset.
 - **CSV Re-Import:** Previously generated CSV files from this tool can be uploaded to rebuild the analytics dashboard without rerunning the query, and the summary API disables response caching so imported analytics are shown immediately.
 - **Heatmap Drilldown:** The heatmap explorer renders full environment, application, or combined environment/application matrices from the complete analytics dataset and uses pair-level protocol/port aggregates for click-through drilldown, with pivot-style multi-select filters for both the matrix and the drilldown table.
-- **Monthly Breakdown:** Live fetches compute exact per-month port/protocol totals while processing daily chunks; imported CSVs use the recorded detection month on each row as the available monthly grouping signal.
+- **Monthly Breakdown:** Live fetches compute exact per-month port/protocol flow totals while processing daily chunks. The monthly table also tracks both observed unique connections and month-spanning active connections based on each merged connection's first/last detected timestamps. Imported CSVs preserve the same distinction using the recorded detection month for observed flows and the row's first/last detected timestamps for active-month coverage.
 
 ## 4. CSV Schema
 The CSV is dynamically structured based on the PCE's label keys:

@@ -123,6 +123,7 @@ type MonthlyPortProtocolSummary struct {
 	Port              int    `json:"port"`
 	FlowCount         int    `json:"flow_count"`
 	UniqueConnections int    `json:"unique_connections"`
+	ActiveConnections int    `json:"active_connections"`
 }
 
 type AnalyticsInsights struct {
@@ -157,6 +158,8 @@ type AnalyticsRecord struct {
 	Port       int
 	Month      string
 	FlowCount  int
+	FirstSeen  time.Time
+	LastSeen   time.Time
 }
 
 type DiscoveryData struct {
@@ -705,6 +708,41 @@ func parseCSVMonthBucket(row []string, getValue func([]string, string) string) s
 	return ""
 }
 
+func parseCSVTimestamp(value string) time.Time {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return time.Time{}
+	}
+	ts, err := time.Parse("2006-01-02 15:04:05", value)
+	if err != nil {
+		return time.Time{}
+	}
+	return ts.UTC()
+}
+
+func monthSpan(start, end time.Time) []string {
+	if start.IsZero() && end.IsZero() {
+		return nil
+	}
+	if start.IsZero() {
+		start = end
+	}
+	if end.IsZero() {
+		end = start
+	}
+	start = time.Date(start.UTC().Year(), start.UTC().Month(), 1, 0, 0, 0, 0, time.UTC)
+	end = time.Date(end.UTC().Year(), end.UTC().Month(), 1, 0, 0, 0, 0, time.UTC)
+	if end.Before(start) {
+		start, end = end, start
+	}
+
+	months := []string{}
+	for current := start; !current.After(end); current = current.AddDate(0, 1, 0) {
+		months = append(months, current.Format("2006-01"))
+	}
+	return months
+}
+
 func parseDateInput(raw string) (time.Time, error) {
 	value := strings.TrimSpace(raw)
 	if value == "" {
@@ -749,17 +787,26 @@ func monthlyPortProtocolFromRecords(records []AnalyticsRecord) []MonthlyPortProt
 	items := make(map[string]MonthlyPortProtocolSummary)
 	for _, record := range records {
 		month := strings.TrimSpace(record.Month)
-		if month == "" {
-			continue
+		if month != "" {
+			key := fmt.Sprintf("%s|%s|%d", month, record.Protocol, record.Port)
+			entry := items[key]
+			entry.Month = month
+			entry.Protocol = record.Protocol
+			entry.Port = record.Port
+			entry.FlowCount += record.FlowCount
+			entry.UniqueConnections++
+			items[key] = entry
 		}
-		key := fmt.Sprintf("%s|%s|%d", month, record.Protocol, record.Port)
-		entry := items[key]
-		entry.Month = month
-		entry.Protocol = record.Protocol
-		entry.Port = record.Port
-		entry.FlowCount += record.FlowCount
-		entry.UniqueConnections++
-		items[key] = entry
+
+		for _, activeMonth := range monthSpan(record.FirstSeen, record.LastSeen) {
+			key := fmt.Sprintf("%s|%s|%d", activeMonth, record.Protocol, record.Port)
+			entry := items[key]
+			entry.Month = activeMonth
+			entry.Protocol = record.Protocol
+			entry.Port = record.Port
+			entry.ActiveConnections++
+			items[key] = entry
+		}
 	}
 
 	results := make([]MonthlyPortProtocolSummary, 0, len(items))
@@ -849,6 +896,8 @@ func parseCSVAnalytics(reader io.Reader) ([]PortProtocolSummary, AnalyticsInsigh
 		if fqdn := getValue(row, "FQDN"); fqdn != "" {
 			dstEndpoint = fqdn
 		}
+		firstSeen := parseCSVTimestamp(getValue(row, "First Detected"))
+		lastSeen := parseCSVTimestamp(getValue(row, "Last Detected"))
 
 		summary = append(summary, PortProtocolSummary{
 			Port:              port,
@@ -870,6 +919,8 @@ func parseCSVAnalytics(reader io.Reader) ([]PortProtocolSummary, AnalyticsInsigh
 			Port:       port,
 			Month:      parseCSVMonthBucket(row, getValue),
 			FlowCount:  flowCount,
+			FirstSeen:  firstSeen,
+			LastSeen:   lastSeen,
 		})
 	}
 
@@ -1660,6 +1711,7 @@ func runExtraction(ctx context.Context, cfg Config) {
 		Raw                 illumio.TrafficFlow
 	})
 	monthlySummaryMap := make(map[string]MonthlyPortProtocolSummary)
+	monthlyUniqueConnectionSet := make(map[string]map[FlowKey]struct{})
 	var aggMu sync.Mutex
 	protoMap := map[int]string{1: "ICMP", 2: "IGMP", 6: "TCP", 17: "UDP", 47: "GRE", 50: "ESP", 51: "AH", 58: "ICMPv6", 89: "OSPF", 112: "VRRP", 132: "SCTP"}
 
@@ -1716,8 +1768,16 @@ func runExtraction(ctx context.Context, cfg Config) {
 							monthEntry.Protocol = protocol
 							monthEntry.Port = f.DstPort
 							monthEntry.FlowCount += f.NumConnections
-							monthEntry.UniqueConnections++
 							monthlySummaryMap[summaryKey] = monthEntry
+
+							if monthKey != "" {
+								set := monthlyUniqueConnectionSet[summaryKey]
+								if set == nil {
+									set = make(map[FlowKey]struct{})
+									monthlyUniqueConnectionSet[summaryKey] = set
+								}
+								set[key] = struct{}{}
+							}
 						}
 						state.Mu.Lock()
 						state.CompletedDays++
@@ -1866,6 +1926,27 @@ func runExtraction(ctx context.Context, cfg Config) {
 	})
 
 	monthlySummaries := make([]MonthlyPortProtocolSummary, 0, len(monthlySummaryMap))
+	for summaryKey, set := range monthlyUniqueConnectionSet {
+		entry := monthlySummaryMap[summaryKey]
+		entry.UniqueConnections = len(set)
+		monthlySummaryMap[summaryKey] = entry
+	}
+	for _, entry := range aggregatedFlows {
+		flow := entry.Raw
+		protocol := fmt.Sprintf("%d", flow.Proto)
+		if name, ok := protoMap[flow.Proto]; ok {
+			protocol = name
+		}
+		for _, activeMonth := range monthSpan(entry.FirstSeen, entry.LastSeen) {
+			summaryKey := fmt.Sprintf("%s|%s|%d", activeMonth, protocol, flow.DstPort)
+			monthEntry := monthlySummaryMap[summaryKey]
+			monthEntry.Month = activeMonth
+			monthEntry.Protocol = protocol
+			monthEntry.Port = flow.DstPort
+			monthEntry.ActiveConnections++
+			monthlySummaryMap[summaryKey] = monthEntry
+		}
+	}
 	for _, item := range monthlySummaryMap {
 		monthlySummaries = append(monthlySummaries, item)
 	}
