@@ -246,6 +246,33 @@
         </div>
 
         <div id="content" class="hidden space-y-8">
+            <section class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <div class="panel rounded-3xl p-5">
+                    <p class="label">Latest Month</p>
+                    <h2 class="headline mt-2 text-lg font-bold">Observed Flows</h2>
+                    <p id="latestMonthFlows" class="metric-accent mt-4 text-3xl font-extrabold">0</p>
+                    <p id="latestMonthLabel" class="muted mt-2 text-sm">No monthly data</p>
+                </div>
+                <div class="panel rounded-3xl p-5">
+                    <p class="label">Latest Month</p>
+                    <h2 class="headline mt-2 text-lg font-bold">Active Connections</h2>
+                    <p id="latestMonthActive" class="metric-secondary mt-4 text-3xl font-extrabold">0</p>
+                    <p id="latestMonthActiveLabel" class="muted mt-2 text-sm">Persistence across month spans</p>
+                </div>
+                <div class="panel rounded-3xl p-5">
+                    <p class="label">Month over Month</p>
+                    <h2 class="headline mt-2 text-lg font-bold">Flow Change</h2>
+                    <p id="monthOverMonthFlows" class="metric-tertiary mt-4 text-3xl font-extrabold">0%</p>
+                    <p id="monthOverMonthFlowsLabel" class="muted mt-2 text-sm">Compared with previous month</p>
+                </div>
+                <div class="panel rounded-3xl p-5">
+                    <p class="label">What Changed</p>
+                    <h2 class="headline mt-2 text-lg font-bold">New Service Pairs</h2>
+                    <p id="newServicePairs" class="metric-warning mt-4 text-3xl font-extrabold">0</p>
+                    <p id="newServicePairsLabel" class="muted mt-2 text-sm">Port/protocol pairs first seen in the latest month</p>
+                </div>
+            </section>
+
             <section class="grid gap-8 xl:grid-cols-[1.2fr_0.8fr]">
                 <div class="panel rounded-3xl p-6">
                     <div class="flex items-center justify-between gap-4">
@@ -262,6 +289,20 @@
                     <p class="label">Risky Services</p>
                     <h2 class="headline mt-2 text-2xl font-bold">Blocked traffic by high-risk service</h2>
                     <div id="riskyServiceChart" class="mt-6 space-y-3"></div>
+                </div>
+            </section>
+
+            <section class="grid gap-8 xl:grid-cols-2">
+                <div class="panel rounded-3xl p-6">
+                    <p class="label">Persistent Relationships</p>
+                    <h2 class="headline mt-2 text-2xl font-bold">Blocked services that persist across months</h2>
+                    <div id="persistentServices" class="mt-6 space-y-3"></div>
+                </div>
+
+                <div class="panel rounded-3xl p-6">
+                    <p class="label">What Changed This Month</p>
+                    <h2 class="headline mt-2 text-2xl font-bold">New port / protocol pairs in the latest month</h2>
+                    <div id="latestMonthChanges" class="mt-6 space-y-3"></div>
                 </div>
             </section>
 
@@ -348,6 +389,14 @@
             return `${((value / total) * 100).toFixed(1)}%`;
         }
 
+        function signedPercentageChange(current, previous) {
+            if (!previous && !current) return '0.0%';
+            if (!previous) return '+100.0%';
+            const change = ((current - previous) / previous) * 100;
+            const sign = change > 0 ? '+' : '';
+            return `${sign}${change.toFixed(1)}%`;
+        }
+
         function riskyServiceRows(summary) {
             const serviceMap = new Map();
             (summary || []).forEach(row => {
@@ -390,6 +439,7 @@
 
         function environmentScorecards(insights) {
             const scoreMap = new Map();
+            const riskyEnvMap = new Map();
 
             (insights.env_matrix || []).forEach(row => {
                 if (!row.source) return;
@@ -406,11 +456,104 @@
                 scoreMap.set(row.destination, destination);
             });
 
+            (insights.env_service_pivot || []).forEach(row => {
+                const key = `${String(row.protocol || '').toLowerCase()}:${row.port}`;
+                const serviceName = riskyServiceCatalog.get(key);
+                if (!serviceName) return;
+                const source = riskyEnvMap.get(row.source_env) || new Set();
+                source.add(serviceName);
+                riskyEnvMap.set(row.source_env, source);
+                const dest = riskyEnvMap.get(row.destination_env) || new Set();
+                dest.add(serviceName);
+                riskyEnvMap.set(row.destination_env, dest);
+            });
+
             return Array.from(scoreMap.values())
                 .filter(row => row.name && row.name !== 'External/Unmanaged')
-                .map(row => ({ ...row, total: row.inbound + row.outbound }))
-                .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name))
+                .map(row => {
+                    const riskyServiceCount = (riskyEnvMap.get(row.name) || new Set()).size;
+                    const total = row.inbound + row.outbound;
+                    const score = total + row.external + (riskyServiceCount * 500);
+                    return { ...row, total, riskyServiceCount, score };
+                })
+                .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name))
                 .slice(0, 6);
+        }
+
+        function monthlyRollup(monthlyRows) {
+            const map = new Map();
+            (monthlyRows || []).forEach(row => {
+                const month = row.month;
+                if (!month) return;
+                const entry = map.get(month) || { month, flows: 0, unique_connections: 0, active_connections: 0, rows: [] };
+                entry.flows += row.flow_count || 0;
+                entry.unique_connections += row.unique_connections || 0;
+                entry.active_connections += row.active_connections || 0;
+                entry.rows.push(row);
+                map.set(month, entry);
+            });
+            return Array.from(map.values()).sort((a, b) => a.month.localeCompare(b.month));
+        }
+
+        function latestMonthSummary(monthlyRows) {
+            const months = monthlyRollup(monthlyRows);
+            const latest = months.length ? months[months.length - 1] : null;
+            const previous = months.length > 1 ? months[months.length - 2] : null;
+            return { latest, previous };
+        }
+
+        function latestMonthNewServicePairs(monthlyRows) {
+            const months = monthlyRollup(monthlyRows);
+            if (!months.length) return { latest: null, previousSet: new Set(), newRows: [] };
+            const latest = months[months.length - 1];
+            const previousSet = new Set();
+            months.slice(0, -1).forEach(month => {
+                month.rows.forEach(row => previousSet.add(`${row.protocol}:${row.port}`));
+            });
+            const newRows = latest.rows
+                .filter(row => !previousSet.has(`${row.protocol}:${row.port}`))
+                .sort((a, b) => (b.flow_count || 0) - (a.flow_count || 0) || String(a.protocol).localeCompare(String(b.protocol)) || (a.port || 0) - (b.port || 0));
+            return { latest, previousSet, newRows };
+        }
+
+        function persistentServiceRows(monthlyRows) {
+            const byService = new Map();
+            (monthlyRows || []).forEach(row => {
+                const key = `${row.protocol}:${row.port}`;
+                const entry = byService.get(key) || {
+                    protocol: row.protocol,
+                    port: row.port,
+                    months: new Set(),
+                    active_connections: 0,
+                    flow_count: 0
+                };
+                entry.months.add(row.month);
+                entry.active_connections += row.active_connections || 0;
+                entry.flow_count += row.flow_count || 0;
+                byService.set(key, entry);
+            });
+            return Array.from(byService.values())
+                .map(row => ({ ...row, month_count: row.months.size }))
+                .filter(row => row.month_count > 1 || row.active_connections > 0)
+                .sort((a, b) => b.month_count - a.month_count || b.active_connections - a.active_connections || b.flow_count - a.flow_count)
+                .slice(0, 8);
+        }
+
+        function riskyServicesByMonth(monthlyRows) {
+            const map = new Map();
+            (monthlyRows || []).forEach(row => {
+                const key = `${String(row.protocol || '').toLowerCase()}:${row.port}`;
+                const serviceName = riskyServiceCatalog.get(key);
+                if (!serviceName) return;
+                const entry = map.get(serviceName) || { name: serviceName, month_count: new Set(), flow_count: 0, active_connections: 0 };
+                entry.month_count.add(row.month);
+                entry.flow_count += row.flow_count || 0;
+                entry.active_connections += row.active_connections || 0;
+                map.set(serviceName, entry);
+            });
+            return Array.from(map.values())
+                .map(row => ({ ...row, recurring_months: row.month_count.size }))
+                .sort((a, b) => b.recurring_months - a.recurring_months || b.flow_count - a.flow_count || a.name.localeCompare(b.name));
         }
 
         function buildFindings(summary, insights) {
@@ -420,6 +563,9 @@
             const topExternal = (insights.top_destination_ips || [])[0];
             const categories = insights.traffic_categories || [];
             const topCategory = categories.length > 0 ? categories[0] : null;
+            const { latest, previous } = latestMonthSummary(insights.monthly_port_protocol || []);
+            const recurringRisky = riskyServicesByMonth(insights.monthly_port_protocol || [])[0];
+            const changeSet = latestMonthNewServicePairs(insights.monthly_port_protocol || []);
             const findings = [];
 
             if (crossTalk[0]) {
@@ -446,8 +592,27 @@
                     body: `${formatNumber(topExternal.flow_count)} blocked flows were directed to this endpoint.`
                 });
             }
+            if (latest) {
+                findings.push({
+                    title: `${latest.month} recorded ${formatNumber(latest.flows)} observed blocked flows`,
+                    body: `${formatNumber(latest.active_connections)} active month-spanning connections were present, ${previous ? `${signedPercentageChange(latest.flows, previous.flows)} versus ${previous.month}.` : 'with no prior month available for comparison.'}`
+                });
+            }
+            if (recurringRisky) {
+                findings.push({
+                    title: `${recurringRisky.name} is the most persistent risky service pattern`,
+                    body: `Observed across ${formatNumber(recurringRisky.recurring_months)} months with ${formatNumber(recurringRisky.active_connections)} active month-level connections.`
+                });
+            }
+            if (changeSet.latest && changeSet.newRows.length) {
+                const row = changeSet.newRows[0];
+                findings.push({
+                    title: `${row.protocol} ${row.port} emerged as a new blocked service pair in ${changeSet.latest.month}`,
+                    body: `${formatNumber(row.flow_count)} observed flows in the latest month with no presence in earlier months of the loaded dataset.`
+                });
+            }
 
-            return findings.slice(0, 4);
+            return findings.slice(0, 6);
         }
 
         function renderFindings(findings) {
@@ -493,6 +658,75 @@
             });
         }
 
+        function renderMonthlyTrendCards(monthlyRows) {
+            const { latest, previous } = latestMonthSummary(monthlyRows || []);
+            const latestChange = latestMonthNewServicePairs(monthlyRows || []);
+
+            document.getElementById('latestMonthFlows').innerText = latest ? formatNumber(latest.flows) : '0';
+            document.getElementById('latestMonthLabel').innerText = latest ? latest.month : 'No monthly data';
+            document.getElementById('latestMonthActive').innerText = latest ? formatNumber(latest.active_connections) : '0';
+            document.getElementById('latestMonthActiveLabel').innerText = latest ? `${latest.month} month-spanning activity` : 'Persistence across month spans';
+            document.getElementById('monthOverMonthFlows').innerText = latest && previous ? signedPercentageChange(latest.flows, previous.flows) : '0.0%';
+            document.getElementById('monthOverMonthFlowsLabel').innerText = latest && previous ? `${previous.month} to ${latest.month}` : 'Compared with previous month';
+            document.getElementById('newServicePairs').innerText = latestChange.latest ? formatNumber(latestChange.newRows.length) : '0';
+            document.getElementById('newServicePairsLabel').innerText = latestChange.latest ? `First seen in ${latestChange.latest.month}` : 'Port/protocol pairs first seen in the latest month';
+        }
+
+        function renderPersistentServices(rows) {
+            const container = document.getElementById('persistentServices');
+            if (!rows.length) {
+                container.innerHTML = '<div class="panel-soft rounded-2xl px-4 py-4 text-sm muted">No month-spanning blocked service patterns were identified in the loaded dataset.</div>';
+                return;
+            }
+            container.innerHTML = '';
+            rows.forEach(row => {
+                const item = document.createElement('div');
+                item.className = 'panel-soft rounded-2xl p-4';
+                item.innerHTML = `
+                    <div class="flex items-start justify-between gap-4">
+                        <div>
+                            <div class="headline text-base font-semibold">${row.protocol} ${row.port}</div>
+                            <div class="muted mt-1 text-sm">Observed across ${formatNumber(row.month_count)} months</div>
+                        </div>
+                        <div class="text-right">
+                            <div class="metric-secondary text-xl font-extrabold">${formatNumber(row.active_connections)}</div>
+                            <div class="muted text-xs uppercase tracking-[0.25em]">active connections</div>
+                        </div>
+                    </div>
+                    <div class="muted mt-3 text-xs">${formatNumber(row.flow_count)} observed flows across the loaded time window</div>
+                `;
+                container.appendChild(item);
+            });
+        }
+
+        function renderLatestMonthChanges(monthlyRows) {
+            const container = document.getElementById('latestMonthChanges');
+            const { latest, newRows } = latestMonthNewServicePairs(monthlyRows || []);
+            if (!latest) {
+                container.innerHTML = '<div class="panel-soft rounded-2xl px-4 py-4 text-sm muted">No monthly data is available for change detection.</div>';
+                return;
+            }
+            if (!newRows.length) {
+                container.innerHTML = `<div class="panel-soft rounded-2xl px-4 py-4 text-sm muted">No new port / protocol pairs appeared in ${latest.month} compared with earlier months in the loaded dataset.</div>`;
+                return;
+            }
+            container.innerHTML = '';
+            newRows.slice(0, 8).forEach(row => {
+                const item = document.createElement('div');
+                item.className = 'panel-soft rounded-2xl p-4';
+                item.innerHTML = `
+                    <div class="flex items-start justify-between gap-4">
+                        <div>
+                            <div class="headline text-base font-semibold">${row.protocol} ${row.port}</div>
+                            <div class="muted mt-1 text-sm">New in ${latest.month}</div>
+                        </div>
+                        <div class="metric-warning text-right text-xl font-extrabold">${formatNumber(row.flow_count)}</div>
+                    </div>
+                `;
+                container.appendChild(item);
+            });
+        }
+
         function renderCrossTalk(rows, totalFlows) {
             const container = document.getElementById('crossTalkList');
             container.innerHTML = '';
@@ -518,6 +752,7 @@
         function renderExternalSpotlight(rows) {
             const container = document.getElementById('externalSpotlight');
             const filtered = (rows || []).filter(row => row.name !== 'External/Unmanaged').slice(0, 6);
+            const total = filtered.reduce((sum, row) => sum + (row.flow_count || 0), 0);
             if (!filtered.length) {
                 container.innerHTML = '<div class="panel-soft rounded-2xl px-4 py-4 text-sm muted">No external or unmanaged destination concentration is present in the loaded dataset.</div>';
                 return;
@@ -533,7 +768,10 @@
                             <div class="headline text-base font-semibold">${row.name}</div>
                             <div class="muted mt-1 text-sm">${formatNumber(row.unique_connections)} unique connections</div>
                         </div>
-                        <div class="metric-warning text-right text-xl font-extrabold">${formatNumber(row.flow_count)}</div>
+                        <div class="text-right">
+                            <div class="metric-warning text-xl font-extrabold">${formatNumber(row.flow_count)}</div>
+                            <div class="muted text-xs uppercase tracking-[0.25em]">${percentage(row.flow_count, total)}</div>
+                        </div>
                     </div>
                 `;
                 container.appendChild(item);
@@ -570,6 +808,12 @@
                                 <span class="metric-warning font-semibold">${formatNumber(row.external)}</span>
                             </div>
                         </div>
+                        <div class="rounded-xl px-3 py-2 panel">
+                            <div class="flex items-center justify-between">
+                                <span class="muted">Risk score / risky services</span>
+                                <span class="metric-danger font-semibold">${formatNumber(row.score)} / ${formatNumber(row.riskyServiceCount)}</span>
+                            </div>
+                        </div>
                     </div>
                 `;
                 container.appendChild(card);
@@ -585,6 +829,7 @@
             const risky = riskyServiceRows(summary);
             const externalFlows = externalFlowTotal(insights);
             const topRisky = risky[0];
+            const monthlyRows = insights.monthly_port_protocol || [];
 
             document.getElementById('fileLabel').innerText = `Current dataset: ${payload.fileName}`;
             document.getElementById('totalFlows').innerText = formatNumber(totalFlows);
@@ -595,7 +840,10 @@
             document.getElementById('topRiskyServiceFlows').innerText = topRisky ? `${formatNumber(topRisky.flow_count)} flows` : '0 flows';
 
             renderFindings(buildFindings(summary, insights));
+            renderMonthlyTrendCards(monthlyRows);
             renderRiskyServices(risky, totalFlows);
+            renderPersistentServices(persistentServiceRows(monthlyRows));
+            renderLatestMonthChanges(monthlyRows);
             renderCrossTalk(topCrossTalk(insights), totalFlows);
             renderExternalSpotlight(insights.top_destination_ips || []);
             renderEnvironmentScorecards(environmentScorecards(insights), totalFlows);

@@ -105,11 +105,14 @@ Use `/executive-summary` for a presentation-ready view of the currently loaded d
 
 This page is intended for leadership or slide-friendly review and highlights:
 -   headline summary cards
+-   latest-month trend cards for observed flows, active connections, and month-over-month change
 -   auto-generated top findings
 -   risky services by blocked flow volume
+-   persistent blocked service patterns across months
+-   latest-month new port / protocol pairs
 -   top environment cross-talk relationships
 -   external / unmanaged destination spotlight
--   environment scorecards
+-   environment scorecards with simple risk ranking
 
 It uses the same underlying analytics dataset as `/summary`, but presents it in a simpler executive format.
 It also includes the shared app theme toggle so you can switch between `Dark`, `Illumio Dark`, and `Illumio Light`.

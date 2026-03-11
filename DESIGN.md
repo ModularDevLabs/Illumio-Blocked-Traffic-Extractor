@@ -43,6 +43,7 @@ To provide a stable, cross-platform standalone tool that extracts "Reported Poli
 - **Executive Route:** `/executive-summary`
 - **In-Memory Analytics:** After a successful fetch, the backend derives analytics state from the aggregated flow set.
 - **Views:** Port/protocol summary, a monthly port/protocol breakdown, an environment-service pivot table, environment cross-talk, app-to-app matrix, top talkers, external/unmanaged summaries, a dedicated `/heatmaps` explorer page with drilldowns, and a separate executive-summary page.
+- **Executive Framing:** The executive-summary page layers presentation-oriented rollups on top of the same analytics payload, including latest-month trend cards, generated narrative findings, risky-service concentration, persistent month-spanning service patterns, latest-month change detection for new port/protocol pairs, external concentration, and environment scorecards with a simple weighted risk ranking.
 - **Interaction Model:** The detailed analytics page allows each major section to be collapsed independently, with the browser persisting the user's last expanded/collapsed state.
 - **Presentation Themes:** The application supports shared dark and Illumio-inspired dark/light palettes without changing the underlying analytics dataset.
 - **CSV Re-Import:** Previously generated CSV files from this tool can be uploaded to rebuild the analytics dashboard without rerunning the query, and the summary API disables response caching so imported analytics are shown immediately.
