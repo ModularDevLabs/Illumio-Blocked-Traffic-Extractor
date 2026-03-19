@@ -26,7 +26,8 @@ To provide a stable, cross-platform standalone tool that extracts "Reported Poli
 
 ### 3.2. Traffic Extraction Engine
 - **Decision Filter:** Strictly filters for `policy_decisions: ["blocked"]`.
-- **Chronological Sequencing:** Uses a worker pool (3 concurrent slots) to process the requested date window from the end of the selected range backwards in 1-day chunks.
+- **Chronological Sequencing:** Uses a worker pool (3 concurrent slots) to process the requested date window from the end of the selected range backwards in configurable time chunks.
+- **Chunk Sizing:** The extraction window can be split into configurable chunks from `1 day` down to `5 minutes`, while the final CSV still merges matching connections across the full requested range.
 - **PCE Schema Compliance:** Ensures all mandatory fields (`query_name`, `services`, `exclude`) are present in every request to prevent HTTP 406 errors.
 - **Resilience:** Automatic 60-second cooldown on HTTP 429 (Rate Limit) and recursive retries for failed chunks.
 - **Service Filtering:** Supports both Illumio service references and direct protocol/port filters such as `TCP:445` and `UDP:5355`.

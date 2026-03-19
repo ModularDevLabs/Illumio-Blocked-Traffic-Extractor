@@ -53,6 +53,7 @@ Discovery notes:
     -   **Add Risky Services:** Click this button to append the Illumio ransomware risky-services set to the Services field. Entries marked `TCP/UDP` are added as separate filters.
     - **Exclusions:** Enter labels or IPs you wish to exclude from either the Source or Destination side.
     - **Days To Fetch:** Choose how many days of blocked traffic to query. The default is 90.
+    - **Chunk Interval:** Choose how the requested time window is split before querying the PCE. The default is `1 day`, with smaller options down to `5 minutes`.
     - **Start Date / End Date:** Optionally set an explicit query window using `YYYY-MM-DD`. If both dates are provided, the app fetches that exact inclusive date range and ignores `Days To Fetch`.
     - **Unknown selectors:** If a source, destination, or exclusion value does not match a discovered object and is not a valid IP or CIDR, it will be skipped and logged as a warning instead of being sent to the PCE as an invalid IP.
 3.  **Configure Export:**

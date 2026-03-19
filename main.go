@@ -45,12 +45,15 @@ type PCEProfile struct {
 	Days       int    `json:"days"`
 	StartDate  string `json:"start_date"`
 	EndDate    string `json:"end_date"`
+	ChunkIntvl string `json:"chunk_interval"`
 }
 
 type AppState struct {
 	Mu               sync.Mutex
-	CompletedDays    int
+	CompletedChunks  int
 	RequestedDays    int
+	RequestedChunks  int
+	ChunkInterval    string
 	TotalConnections int
 	Logs             []string
 	IsDone           bool
@@ -670,6 +673,12 @@ type Config struct {
 	Days       int    `json:"days"`
 	StartDate  string `json:"start_date"`
 	EndDate    string `json:"end_date"`
+	ChunkIntvl string `json:"chunk_interval"`
+}
+
+type extractionChunk struct {
+	Start time.Time
+	End   time.Time
 }
 
 func handleTest(w http.ResponseWriter, r *http.Request) {
@@ -701,8 +710,10 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 	defer state.Mu.Unlock()
 
 	response := map[string]interface{}{
-		"completedDays":    state.CompletedDays,
+		"completedChunks":  state.CompletedChunks,
 		"requestedDays":    state.RequestedDays,
+		"requestedChunks":  state.RequestedChunks,
+		"chunkInterval":    state.ChunkInterval,
 		"totalConnections": state.TotalConnections,
 		"newLogs":          state.Logs,
 		"done":             state.IsDone,
@@ -877,6 +888,48 @@ func extractionDateRange(cfg Config, now time.Time) (time.Time, time.Time, int, 
 	end = now.UTC().AddDate(0, 0, -1)
 	start = end.AddDate(0, 0, -(days - 1))
 	return start, end, days, nil
+}
+
+func parseChunkInterval(raw string) (time.Duration, string, error) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "", "24h", "1d", "1day":
+		return 24 * time.Hour, "1 day", nil
+	case "12h":
+		return 12 * time.Hour, "12h", nil
+	case "6h":
+		return 6 * time.Hour, "6h", nil
+	case "3h":
+		return 3 * time.Hour, "3h", nil
+	case "1h":
+		return 1 * time.Hour, "1h", nil
+	case "30m":
+		return 30 * time.Minute, "30m", nil
+	case "10m":
+		return 10 * time.Minute, "10m", nil
+	case "5m":
+		return 5 * time.Minute, "5m", nil
+	default:
+		return 0, "", fmt.Errorf("invalid chunk interval %q; valid options are 24h, 12h, 6h, 3h, 1h, 30m, 10m, 5m", raw)
+	}
+}
+
+func buildExtractionChunks(start, end time.Time, interval time.Duration) []extractionChunk {
+	rangeStart := start.UTC()
+	rangeEndExclusive := end.UTC().Add(24 * time.Hour)
+	if !rangeEndExclusive.After(rangeStart) || interval <= 0 {
+		return nil
+	}
+
+	chunks := make([]extractionChunk, 0)
+	for chunkEnd := rangeEndExclusive; chunkEnd.After(rangeStart); {
+		chunkStart := chunkEnd.Add(-interval)
+		if chunkStart.Before(rangeStart) {
+			chunkStart = rangeStart
+		}
+		chunks = append(chunks, extractionChunk{Start: chunkStart, End: chunkEnd})
+		chunkEnd = chunkStart
+	}
+	return chunks
 }
 
 func monthlyPortProtocolFromRecords(records []AnalyticsRecord) []MonthlyPortProtocolSummary {
@@ -1100,15 +1153,23 @@ func handleStart(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	_, _, requestedDays, err := extractionDateRange(cfg, time.Now().UTC())
+	rangeStart, rangeEnd, requestedDays, err := extractionDateRange(cfg, time.Now().UTC())
 	if err != nil {
 		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	chunkDuration, chunkLabel, err := parseChunkInterval(cfg.ChunkIntvl)
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	requestedChunks := len(buildExtractionChunks(rangeStart, rangeEnd, chunkDuration))
 
 	state.Mu.Lock()
-	state.CompletedDays = 0
+	state.CompletedChunks = 0
 	state.RequestedDays = requestedDays
+	state.RequestedChunks = requestedChunks
+	state.ChunkInterval = chunkLabel
 	state.TotalConnections = 0
 	state.IsDone = false
 	state.IsCancelled = false
@@ -1824,22 +1885,29 @@ func runExtraction(ctx context.Context, cfg Config) {
 		markRunFinished("", false)
 		return
 	}
-	jobs := make(chan int, requestedDays)
+	chunkDuration, chunkLabel, err := parseChunkInterval(cfg.ChunkIntvl)
+	if err != nil {
+		addLog(fmt.Sprintf("Error: %v", err))
+		markRunFinished("", false)
+		return
+	}
+	chunks := buildExtractionChunks(rangeStart, rangeEnd, chunkDuration)
+
+	jobs := make(chan int, len(chunks))
 	var wg sync.WaitGroup
 	for w := 1; w <= 3; w++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for day := range jobs {
+			for chunkIdx := range jobs {
 				select {
 				case <-ctx.Done():
 					return
 				default:
-					dayReq := req
-					dayStart := rangeEnd.AddDate(0, 0, -day)
-					dayReq.StartDate = dayStart.Format("2006-01-02T00:00:00Z")
-					dayReq.EndDate = dayStart.AddDate(0, 0, 1).Format("2006-01-02T00:00:00Z")
-					flows, err := client.FetchDayOfTraffic(ctx, dayReq, addLog)
+					chunkReq := req
+					chunkReq.StartDate = chunks[chunkIdx].Start.Format(time.RFC3339)
+					chunkReq.EndDate = chunks[chunkIdx].End.Format(time.RFC3339)
+					flows, err := client.FetchDayOfTraffic(ctx, chunkReq, addLog)
 					if err == nil {
 						aggMu.Lock()
 						for _, f := range flows {
@@ -1882,20 +1950,20 @@ func runExtraction(ctx context.Context, cfg Config) {
 							}
 						}
 						state.Mu.Lock()
-						state.CompletedDays++
+						state.CompletedChunks++
 						state.TotalConnections = len(aggregatedFlows)
 						state.Mu.Unlock()
 						aggMu.Unlock()
-						addLog(fmt.Sprintf("Day -%d: %d connections gathered", day, len(flows)))
+						addLog(fmt.Sprintf("Chunk %d/%d (%s to %s): %d connections gathered", chunkIdx+1, len(chunks), chunks[chunkIdx].Start.Format("2006-01-02 15:04Z"), chunks[chunkIdx].End.Format("2006-01-02 15:04Z"), len(flows)))
 					} else {
-						addLog(fmt.Sprintf("Error Day -%d: %v", day, err))
+						addLog(fmt.Sprintf("Error chunk %d/%d (%s to %s): %v", chunkIdx+1, len(chunks), chunks[chunkIdx].Start.Format("2006-01-02 15:04Z"), chunks[chunkIdx].End.Format("2006-01-02 15:04Z"), err))
 					}
 				}
 			}
 		}()
 	}
-	addLog(fmt.Sprintf("Extraction window: %s through %s (%d days).", rangeStart.Format("2006-01-02"), rangeEnd.Format("2006-01-02"), requestedDays))
-	for i := 0; i < requestedDays; i++ {
+	addLog(fmt.Sprintf("Extraction window: %s through %s (%d days) using %s chunks (%d total).", rangeStart.Format("2006-01-02"), rangeEnd.Format("2006-01-02"), requestedDays, chunkLabel, len(chunks)))
+	for i := 0; i < len(chunks); i++ {
 		jobs <- i
 	}
 	close(jobs)

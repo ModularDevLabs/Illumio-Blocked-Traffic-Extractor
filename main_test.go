@@ -209,6 +209,85 @@ func TestExtractionDateRange(t *testing.T) {
 	})
 }
 
+func TestParseChunkInterval(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		input     string
+		want      time.Duration
+		wantLabel string
+		wantErr   bool
+	}{
+		{name: "default empty", input: "", want: 24 * time.Hour, wantLabel: "1 day"},
+		{name: "explicit 24h", input: "24h", want: 24 * time.Hour, wantLabel: "1 day"},
+		{name: "hourly", input: "1h", want: time.Hour, wantLabel: "1h"},
+		{name: "ten minutes", input: "10m", want: 10 * time.Minute, wantLabel: "10m"},
+		{name: "invalid", input: "2h", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, label, err := parseChunkInterval(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("parseChunkInterval(%q) error = %v, wantErr %v", tt.input, err, tt.wantErr)
+			}
+			if tt.wantErr {
+				return
+			}
+			if got != tt.want {
+				t.Fatalf("parseChunkInterval(%q) duration = %v, want %v", tt.input, got, tt.want)
+			}
+			if label != tt.wantLabel {
+				t.Fatalf("parseChunkInterval(%q) label = %q, want %q", tt.input, label, tt.wantLabel)
+			}
+		})
+	}
+}
+
+func TestBuildExtractionChunks(t *testing.T) {
+	t.Parallel()
+
+	start := time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC)
+	end := time.Date(2026, time.March, 2, 0, 0, 0, 0, time.UTC)
+
+	t.Run("daily range split into half days", func(t *testing.T) {
+		t.Parallel()
+
+		chunks := buildExtractionChunks(start, end, 12*time.Hour)
+		if got, want := len(chunks), 4; got != want {
+			t.Fatalf("len(chunks) = %d, want %d", got, want)
+		}
+		if got, want := chunks[0].Start.Format(time.RFC3339), "2026-03-02T12:00:00Z"; got != want {
+			t.Fatalf("chunks[0].Start = %s, want %s", got, want)
+		}
+		if got, want := chunks[0].End.Format(time.RFC3339), "2026-03-03T00:00:00Z"; got != want {
+			t.Fatalf("chunks[0].End = %s, want %s", got, want)
+		}
+		if got, want := chunks[3].Start.Format(time.RFC3339), "2026-03-01T00:00:00Z"; got != want {
+			t.Fatalf("chunks[3].Start = %s, want %s", got, want)
+		}
+	})
+
+	t.Run("partial leading chunk preserved", func(t *testing.T) {
+		t.Parallel()
+
+		chunks := buildExtractionChunks(start, start, 36*time.Hour)
+		if got, want := len(chunks), 1; got != want {
+			t.Fatalf("len(chunks) = %d, want %d", got, want)
+		}
+		if got, want := chunks[0].Start.Format(time.RFC3339), "2026-03-01T00:00:00Z"; got != want {
+			t.Fatalf("chunks[0].Start = %s, want %s", got, want)
+		}
+		if got, want := chunks[0].End.Format(time.RFC3339), "2026-03-02T00:00:00Z"; got != want {
+			t.Fatalf("chunks[0].End = %s, want %s", got, want)
+		}
+	})
+}
+
 func TestMonthlyPortProtocolFromRecordsTracksActiveConnectionsAcrossMonths(t *testing.T) {
 	t.Parallel()
 
