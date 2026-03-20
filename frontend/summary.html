@@ -106,8 +106,8 @@
         }
     </style>
 </head>
-<body data-theme="default" class="min-h-screen p-6 md:p-10">
-    <div class="mx-auto max-w-7xl">
+<body data-theme="default" class="min-h-screen px-4 py-5 md:px-6 md:py-8 xl:px-8">
+    <div class="mx-auto w-full max-w-[118rem]">
         <div class="mb-8 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
             <div>
                 <p class="title mb-2 text-xs uppercase tracking-[0.35em]">Post-Fetch Analytics</p>
@@ -157,7 +157,7 @@
                         <span class="collapse-icon text-sm">▾</span>
                     </button>
                 </div>
-                <div class="grid gap-4 md:grid-cols-4" data-collapsible-content>
+                <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4" data-collapsible-content>
                     <div class="rounded-2xl border border-gray-800 bg-gray-900 p-5">
                         <p class="text-xs uppercase tracking-widest text-gray-500">Port / Protocol Rows</p>
                         <p id="rowCount" class="mt-2 text-3xl font-bold text-cyan-400">0</p>
@@ -230,7 +230,7 @@
                         <span class="collapse-icon text-sm">▾</span>
                     </button>
                 </div>
-                <div class="grid gap-8 xl:grid-cols-2" data-collapsible-content>
+                <div class="grid gap-8 2xl:grid-cols-2" data-collapsible-content>
                     <div class="rounded-2xl border border-gray-800 bg-gray-900 p-4">
                         <h3 class="mb-3 text-sm font-semibold text-gray-300">Environment Heatmap</h3>
                         <p class="mb-3 text-xs text-gray-500">Showing labeled environment relationships only.</p>
@@ -256,7 +256,7 @@
                     </button>
                 </div>
                 <div class="space-y-4" data-collapsible-content>
-                    <div class="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
+                    <div class="grid gap-4 xl:grid-cols-[320px_minmax(0,1fr)] 2xl:grid-cols-[360px_minmax(0,1fr)]">
                         <div class="rounded-2xl border border-gray-800 bg-gray-900 p-4">
                             <label for="pivotSourceEnvSelect" class="mb-3 block text-sm font-semibold text-gray-300">Source Environments</label>
                             <select id="pivotSourceEnvSelect" multiple size="8" class="w-full rounded-xl px-3 py-3 text-sm"></select>
@@ -269,7 +269,7 @@
                 </div>
             </section>
 
-            <div class="grid gap-8 xl:grid-cols-2">
+            <div class="grid gap-8 2xl:grid-cols-2">
                 <section class="space-y-4 rounded-2xl border panel p-5" data-collapsible="env-matrix">
                     <div class="flex items-center justify-between gap-4">
                         <div>
@@ -327,7 +327,7 @@
                 </section>
             </div>
 
-            <div class="grid gap-8 xl:grid-cols-2">
+            <div class="grid gap-8 2xl:grid-cols-2">
                 <section class="space-y-4 rounded-2xl border panel p-5" data-collapsible="top-talkers">
                     <div class="flex items-center justify-between gap-4">
                         <div>

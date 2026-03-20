@@ -143,8 +143,8 @@
         }
     </style>
 </head>
-<body data-theme="default" class="min-h-screen p-6 md:p-10">
-    <div class="mx-auto max-w-[95rem]">
+<body data-theme="default" class="min-h-screen px-4 py-5 md:px-6 md:py-8 xl:px-8">
+    <div class="mx-auto w-full max-w-[132rem]">
         <div class="mb-8 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
             <div>
                 <p class="title mb-2 text-xs uppercase tracking-[0.35em]">Interactive Heatmaps</p>
@@ -182,7 +182,7 @@
                         <button id="combinedModeBtn" type="button" class="mode-button rounded-lg px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em]">Environment + Application</button>
                     </div>
                 </div>
-                <div class="mt-5 grid gap-4 xl:grid-cols-[280px_280px_1fr]">
+                <div class="mt-5 grid gap-4 xl:grid-cols-[300px_300px_minmax(0,1.35fr)] 2xl:grid-cols-[320px_320px_minmax(0,1.5fr)]">
                     <div class="rounded-2xl border border-gray-800 bg-gray-900 p-4">
                         <label class="mb-3 block text-sm font-semibold text-gray-300">Source Filter</label>
                         <div id="sourceFilterWrap"></div>
@@ -242,7 +242,7 @@
                     Click a populated heatmap cell to show the contributing protocols and ports.
                 </div>
                 <div id="drilldownPanel" class="hidden space-y-4">
-                    <div class="grid gap-4 lg:grid-cols-[280px_280px_minmax(0,1fr)]">
+                    <div class="grid gap-4 xl:grid-cols-[300px_300px_minmax(0,1.35fr)] 2xl:grid-cols-[320px_320px_minmax(0,1.5fr)]">
                         <div class="rounded-2xl border border-gray-800 bg-gray-900 p-4">
                             <label class="mb-3 block text-sm font-semibold text-gray-300">Protocol Filter</label>
                             <div id="drilldownProtocolFilterWrap"></div>
