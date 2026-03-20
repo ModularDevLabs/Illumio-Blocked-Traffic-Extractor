@@ -219,31 +219,6 @@
                 <div id="monthlyBreakdownWrap" class="space-y-4" data-collapsible-content></div>
             </section>
 
-            <section class="space-y-4 rounded-2xl border panel p-5" data-collapsible="heatmaps">
-                <div class="flex items-center justify-between gap-4">
-                    <div>
-                        <h2 class="text-xl font-bold text-sky-300">Heatmap Matrices</h2>
-                        <p class="text-xs uppercase tracking-widest text-gray-500">Visual flow intensity</p>
-                    </div>
-                    <button type="button" class="collapse-toggle inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em]" data-collapse-toggle>
-                        <span data-collapse-label>Collapse</span>
-                        <span class="collapse-icon text-sm">▾</span>
-                    </button>
-                </div>
-                <div class="grid gap-8 2xl:grid-cols-2" data-collapsible-content>
-                    <div class="rounded-2xl border border-gray-800 bg-gray-900 p-4">
-                        <h3 class="mb-3 text-sm font-semibold text-gray-300">Environment Heatmap</h3>
-                        <p class="mb-3 text-xs text-gray-500">Showing labeled environment relationships only.</p>
-                        <div id="envHeatmap" class="overflow-auto"></div>
-                    </div>
-                    <div class="rounded-2xl border border-gray-800 bg-gray-900 p-4">
-                        <h3 class="mb-3 text-sm font-semibold text-gray-300">App Heatmap</h3>
-                        <p class="mb-3 text-xs text-gray-500">Showing labeled application relationships only.</p>
-                        <div id="appHeatmap" class="overflow-auto"></div>
-                    </div>
-                </div>
-            </section>
-
             <section class="space-y-4 rounded-2xl border panel p-5" data-collapsible="env-service-pivot">
                 <div class="flex items-center justify-between gap-4">
                     <div>
@@ -640,75 +615,6 @@
             });
         }
 
-        function buildHeatmap(containerId, rows, options = {}) {
-            const container = document.getElementById(containerId);
-            const filteredInput = (rows || []).filter(row => {
-                if (options.excludeExternal) {
-                    return row.source !== 'External/Unmanaged' && row.destination !== 'External/Unmanaged';
-                }
-                return true;
-            });
-
-            if (!filteredInput || filteredInput.length === 0) {
-                container.innerHTML = '<p class="text-sm text-gray-500">No data available.</p>';
-                return;
-            }
-
-            const sourceTotals = new Map();
-            const destinationTotals = new Map();
-            filteredInput.forEach(row => {
-                sourceTotals.set(row.source, (sourceTotals.get(row.source) || 0) + (row.flow_count || 0));
-                destinationTotals.set(row.destination, (destinationTotals.get(row.destination) || 0) + (row.flow_count || 0));
-            });
-
-            const limit = options.limit || 8;
-            const topSources = Array.from(sourceTotals.entries())
-                .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-                .slice(0, limit)
-                .map(entry => entry[0]);
-            const topDestinations = Array.from(destinationTotals.entries())
-                .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-                .slice(0, limit)
-                .map(entry => entry[0]);
-
-            const rowSet = new Set(topSources);
-            const colSet = new Set(topDestinations);
-            const filtered = filteredInput.filter(row => rowSet.has(row.source) && colSet.has(row.destination));
-            const maxFlow = filtered.reduce((max, row) => Math.max(max, row.flow_count || 0), 0) || 1;
-            const cellMap = new Map(filtered.map(row => [`${row.source}|||${row.destination}`, row]));
-
-            let html = '<table class="min-w-full border-separate border-spacing-1 text-xs">';
-            html += '<thead><tr><th class="sticky left-0 bg-gray-900 px-3 py-2 text-left text-gray-500">Source \\ Destination</th>';
-            topDestinations.forEach(destination => {
-                html += `<th class="min-w-[120px] px-3 py-2 text-left text-gray-500">${escapeHtml(destination)}</th>`;
-            });
-            html += '</tr></thead><tbody>';
-
-            topSources.forEach(source => {
-                html += `<tr><th class="sticky left-0 bg-gray-900 px-3 py-3 text-left font-semibold text-gray-300">${escapeHtml(source)}</th>`;
-                topDestinations.forEach(destination => {
-                    const row = cellMap.get(`${source}|||${destination}`);
-                    const flowCount = row ? row.flow_count || 0 : 0;
-                    const uniqueConnections = row ? row.unique_connections || 0 : 0;
-                    const intensity = flowCount / maxFlow;
-                    const alpha = 0.08 + (intensity * 0.72);
-                    const bg = flowCount > 0 ? `rgba(34, 211, 238, ${alpha.toFixed(3)})` : 'rgba(31, 41, 55, 0.45)';
-                    const textClass = flowCount > 0 ? 'text-white' : 'text-gray-600';
-                    html += `
-                        <td class="rounded-lg px-3 py-3 align-top ${textClass}" style="background:${bg}">
-                            <div class="font-semibold">${formatNumber(flowCount)}</div>
-                            <div class="mt-1 text-[11px] ${flowCount > 0 ? 'text-cyan-100' : 'text-gray-600'}">${formatNumber(uniqueConnections)} uniq</div>
-                        </td>
-                    `;
-                });
-                html += '</tr>';
-            });
-
-            html += '</tbody></table>';
-            html += `<p class="mt-3 text-xs text-gray-500">Showing top ${topSources.length} sources by flows against top ${topDestinations.length} destinations by flows.</p>`;
-            container.innerHTML = html;
-        }
-
         function buildExternalDestinationList(insights) {
             const envRows = insights.env_matrix || [];
             const destinationRows = insights.top_destination_ips || [];
@@ -811,8 +717,6 @@
             renderMonthlyBreakdown(insights.monthly_port_protocol || []);
             renderPivotSourceEnvOptions(insights.source_env_options || []);
             renderEnvServicePivot(insights);
-            buildHeatmap('envHeatmap', insights.env_matrix || [], { limit: 8, excludeExternal: true });
-            buildHeatmap('appHeatmap', insights.app_matrix || [], { limit: 8, excludeExternal: true });
             buildExternalDestinationList(insights);
         }
 
