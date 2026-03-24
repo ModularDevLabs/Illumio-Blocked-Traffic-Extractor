@@ -54,6 +54,9 @@ type AppState struct {
 	RequestedDays    int
 	RequestedChunks  int
 	ChunkInterval    string
+	DiscoveryDone    int
+	DiscoveryTotal   int
+	DiscoveryActive  bool
 	TotalConnections int
 	Logs             []string
 	IsDone           bool
@@ -333,6 +336,9 @@ func fetchDiscoveryData(ctx context.Context, client *illumio.Client, logPrefix s
 					resultMu.Unlock()
 					addLog(fmt.Sprintf("%s loaded %d %s.", logPrefix, count, task.name))
 				}
+				state.Mu.Lock()
+				state.DiscoveryDone++
+				state.Mu.Unlock()
 			}
 		}()
 	}
@@ -546,6 +552,17 @@ func handleDiscovery(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(context.Background(), discoveryTimeout)
 	defer cancel()
 
+	state.Mu.Lock()
+	state.DiscoveryDone = 0
+	state.DiscoveryTotal = 7
+	state.DiscoveryActive = true
+	state.Mu.Unlock()
+	defer func() {
+		state.Mu.Lock()
+		state.DiscoveryActive = false
+		state.Mu.Unlock()
+	}()
+
 	client := illumio.NewClient(cfg.PCEURL, cfg.OrgID, cfg.APIKey, cfg.APISecret)
 	addLog("Discovery: starting parallel collection load (up to 3 collection jobs at a time)...")
 	discoveryData, err := fetchDiscoveryData(ctx, client, "Discovery:")
@@ -745,6 +762,9 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 		"done":             state.IsDone,
 		"cancelled":        state.IsCancelled,
 		"fileName":         state.FileName,
+		"discoveryDone":    state.DiscoveryDone,
+		"discoveryTotal":   state.DiscoveryTotal,
+		"discoveryActive":  state.DiscoveryActive,
 	}
 	state.Logs = []string{}
 	json.NewEncoder(w).Encode(response)
