@@ -263,6 +263,22 @@ func (c *Client) TestConnection(ctx context.Context) error {
 	return nil
 }
 
+func (c *Client) GetTrafficFlowsDatabaseMetrics(ctx context.Context) (TrafficFlowsDatabaseMetrics, error) {
+	data, code, err := c.request(ctx, "GET", "traffic_flows/database_metrics", nil)
+	if err != nil {
+		return TrafficFlowsDatabaseMetrics{}, err
+	}
+	if code != http.StatusOK {
+		return TrafficFlowsDatabaseMetrics{}, fmt.Errorf("PCE returned %d", code)
+	}
+
+	var metrics TrafficFlowsDatabaseMetrics
+	if err := json.Unmarshal(data, &metrics); err != nil {
+		return TrafficFlowsDatabaseMetrics{}, err
+	}
+	return metrics, nil
+}
+
 func (c *Client) FetchDayOfTraffic(ctx context.Context, req AsyncQueryRequest, logFn func(string)) ([]TrafficFlow, error) {
 	req.MaxResults = 200000
 	req.PolicyDecisions = []string{"blocked"}

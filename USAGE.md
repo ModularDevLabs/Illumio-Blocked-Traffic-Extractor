@@ -46,7 +46,7 @@ Discovery notes:
 
 ## 4. Running an Extraction
 1.  **Select/Enter Credentials:** Ensure the PCE details are correct.
-    -   **Test Connection:** Uses a lightweight authenticated API check instead of loading the full label inventory, so it remains responsive on larger PCEs.
+    -   **Test Connection:** Uses a lightweight authenticated API check instead of loading the full label inventory, so it remains responsive on larger PCEs. It also loads the PCE traffic database metrics panel on the main page, including server flow retention days and the oldest retained server-flow day when the metrics endpoint is available.
 2.  **Define Filters:**
     -   **Sources/Destinations:** Enter label names (e.g., `App: DB`) or IP addresses. Separate multiple items with commas.
     -   **Services:** Enter specific service names from the PCE (e.g., `SSH, MySQL`) or explicit protocol/port filters (e.g., `TCP:445, UDP:5355`). Leave empty to pull all services.

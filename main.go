@@ -699,7 +699,16 @@ func handleTest(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
 		return
 	}
-	json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
+
+	response := map[string]interface{}{"success": true}
+	metrics, metricsErr := client.GetTrafficFlowsDatabaseMetrics(ctx)
+	if metricsErr != nil {
+		response["metrics_error"] = metricsErr.Error()
+	} else {
+		response["metrics"] = metrics
+	}
+
+	json.NewEncoder(w).Encode(response)
 }
 
 func handleStatus(w http.ResponseWriter, r *http.Request) {

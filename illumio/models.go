@@ -141,3 +141,22 @@ type AsyncJobStatus struct {
 	Status string         `json:"status"`
 	Result AsyncJobResult `json:"result"`
 }
+
+type TrafficFlowsDatabaseMetrics struct {
+	FlowsDays      int                          `json:"flows_days"`
+	FlowsDaysLimit int                          `json:"flows_days_limit"`
+	FlowsOldestDay string                       `json:"flows_oldest_day"`
+	FlowsSizeGB    float64                      `json:"flows_size_gb"`
+	Server         TrafficFlowsDatabaseCategory `json:"server"`
+	Endpoint       TrafficFlowsDatabaseCategory `json:"endpoint"`
+	UpdatedAt      string                       `json:"updated_at"`
+}
+
+type TrafficFlowsDatabaseCategory struct {
+	NumFlowsDays      int     `json:"num_flows_days"`
+	NumFlowsDaysLimit int     `json:"num_flows_days_limit"`
+	FlowsOldestDay    string  `json:"flows_oldest_day"`
+	FlowsSizeGB       float64 `json:"flows_size_gb"`
+	NumDailyTables    int     `json:"num_daily_tables"`
+	NumWeeklyTables   int     `json:"num_weekly_tables"`
+}

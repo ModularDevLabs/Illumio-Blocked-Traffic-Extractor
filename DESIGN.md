@@ -33,6 +33,7 @@ To provide a stable, cross-platform standalone tool that extracts "Reported Poli
 - **Service Filtering:** Supports both Illumio service references and direct protocol/port filters such as `TCP:445` and `UDP:5355`.
 - **Selector Hardening:** Unknown source, destination, and exclusion values are only treated as IP filters when they parse as valid IP/CIDR values; otherwise they are skipped and logged as warnings.
 - **Connection Test:** The UI connection check uses a lightweight authenticated API request rather than a full discovery collection load.
+- **Traffic DB Metrics:** The main page can query the PCE traffic flow database metrics endpoint and show current server retention days plus the oldest retained server-flow day.
 - **Window Selection:** Users can run either a trailing `Days To Fetch` query or an explicit inclusive `Start Date` / `End Date` range.
 
 ### 3.3. Data Aggregation & Deduplication
