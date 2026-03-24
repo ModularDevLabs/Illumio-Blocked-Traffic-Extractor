@@ -494,6 +494,7 @@ func main() {
 	})
 
 	http.HandleFunc("/api/test", handleTest)
+	http.HandleFunc("/api/traffic-db-metrics", handleTrafficDBMetrics)
 	http.HandleFunc("/api/discovery", handleDiscovery)
 	http.HandleFunc("/api/start", handleStart)
 	http.HandleFunc("/api/cancel", handleCancel)
@@ -699,16 +700,32 @@ func handleTest(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
 		return
 	}
+	json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
+}
 
-	response := map[string]interface{}{"success": true}
-	metrics, metricsErr := client.GetTrafficFlowsDatabaseMetrics(ctx)
-	if metricsErr != nil {
-		response["metrics_error"] = metricsErr.Error()
-	} else {
-		response["metrics"] = metrics
+func handleTrafficDBMetrics(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) || !requireSameOrigin(w, r) {
+		return
+	}
+	var cfg Config
+	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
+		writeJSONError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	client := illumio.NewClient(cfg.PCEURL, cfg.OrgID, cfg.APIKey, cfg.APISecret)
+	metrics, err := client.GetTrafficFlowsDatabaseMetrics(ctx)
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
+		return
 	}
 
-	json.NewEncoder(w).Encode(response)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"metrics": metrics,
+	})
 }
 
 func handleStatus(w http.ResponseWriter, r *http.Request) {

@@ -236,9 +236,12 @@
             <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                 <div>
                     <h2 class="text-sm font-bold themed-muted uppercase tracking-wider">Traffic DB Availability</h2>
-                    <p id="trafficDbStatus" class="mt-2 text-sm themed-muted">Click <span class="font-semibold">Test</span> to load the PCE traffic database retention metrics.</p>
+                    <p id="trafficDbStatus" class="mt-2 text-sm themed-muted">Use this panel to load the PCE traffic database retention metrics.</p>
+                    <button type="button" onclick="loadTrafficDbMetrics()" class="mt-3 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold uppercase tracking-wide text-white transition hover:bg-indigo-500">
+                        Load Traffic DB Metrics
+                    </button>
                 </div>
-                <div class="grid gap-3 sm:grid-cols-2 2xl:grid-cols-4 xl:min-w-[44rem]">
+                <div class="grid gap-3 sm:grid-cols-2 xl:min-w-[32rem]">
                     <div class="rounded-lg border themed-panel p-3">
                         <div class="text-xs font-bold uppercase themed-muted">Server Days</div>
                         <div id="trafficDbServerDays" class="mt-2 text-2xl font-bold themed-title">--</div>
@@ -246,10 +249,6 @@
                     <div class="rounded-lg border themed-panel p-3">
                         <div class="text-xs font-bold uppercase themed-muted">Oldest Server Day</div>
                         <div id="trafficDbOldestDay" class="mt-2 text-lg font-bold">--</div>
-                    </div>
-                    <div class="rounded-lg border themed-panel p-3">
-                        <div class="text-xs font-bold uppercase themed-muted">Server Day Limit</div>
-                        <div id="trafficDbServerLimit" class="mt-2 text-lg font-bold">--</div>
                     </div>
                     <div class="rounded-lg border themed-panel p-3">
                         <div class="text-xs font-bold uppercase themed-muted">Updated</div>
@@ -659,19 +658,17 @@
         }
 
         function resetTrafficDbMetrics() {
-            document.getElementById('trafficDbStatus').innerText = 'Click Test to load the PCE traffic database retention metrics.';
+            document.getElementById('trafficDbStatus').innerText = 'Use this panel to load the PCE traffic database retention metrics.';
             document.getElementById('trafficDbServerDays').innerText = '--';
             document.getElementById('trafficDbOldestDay').innerText = '--';
-            document.getElementById('trafficDbServerLimit').innerText = '--';
             document.getElementById('trafficDbUpdatedAt').innerText = '--';
         }
 
-        function renderTrafficDbMetrics(metrics, metricsError) {
+        function renderTrafficDbMetrics(metrics, errorMessage) {
             if (!metrics || !metrics.server) {
-                document.getElementById('trafficDbStatus').innerText = metricsError || 'Traffic database metrics were not returned by the PCE.';
+                document.getElementById('trafficDbStatus').innerText = errorMessage || 'Traffic database metrics were not returned by the PCE.';
                 document.getElementById('trafficDbServerDays').innerText = '--';
                 document.getElementById('trafficDbOldestDay').innerText = '--';
-                document.getElementById('trafficDbServerLimit').innerText = '--';
                 document.getElementById('trafficDbUpdatedAt').innerText = '--';
                 return;
             }
@@ -679,8 +676,27 @@
             document.getElementById('trafficDbStatus').innerText = 'Server traffic flow retention currently reported by the connected PCE.';
             document.getElementById('trafficDbServerDays').innerText = `${metrics.server.num_flows_days ?? '--'}`;
             document.getElementById('trafficDbOldestDay').innerText = metrics.server.flows_oldest_day || '--';
-            document.getElementById('trafficDbServerLimit').innerText = `${metrics.server.num_flows_days_limit ?? '--'}`;
             document.getElementById('trafficDbUpdatedAt').innerText = metrics.updated_at || '--';
+        }
+
+        async function loadTrafficDbMetrics() {
+            log('Loading traffic DB metrics...');
+            try {
+                const res = await fetch('/api/traffic-db-metrics', { method: 'POST', body: JSON.stringify(getConfig()) });
+                const data = await res.json();
+                if (!data.success) {
+                    renderTrafficDbMetrics(null, data.error || 'Unknown error');
+                    log(`<span class="text-red-400">Traffic DB metrics error: ${data.error || 'Unknown error'}</span>`);
+                    return;
+                }
+                renderTrafficDbMetrics(data.metrics, '');
+                if (data.metrics && data.metrics.server) {
+                    log(`Traffic DB: ${data.metrics.server.num_flows_days} server flow days available, oldest day ${data.metrics.server.flows_oldest_day || 'unknown'}.`);
+                }
+            } catch (e) {
+                renderTrafficDbMetrics(null, e.message);
+                log(`<span class="text-red-400">Traffic DB metrics fatal: ${e.message}</span>`);
+            }
         }
 
         function appendRiskyServices() {
@@ -741,18 +757,10 @@
                 const data = await res.json();
                 if (data.success) {
                     log(`<span class="text-green-400 font-bold underline italic">Success! Connection authenticated.</span>`);
-                    renderTrafficDbMetrics(data.metrics, data.metrics_error);
-                    if (data.metrics && data.metrics.server) {
-                        log(`Traffic DB: ${data.metrics.server.num_flows_days} server flow days available, oldest day ${data.metrics.server.flows_oldest_day || 'unknown'}.`);
-                    } else if (data.metrics_error) {
-                        log(`<span class="text-amber-300">Traffic DB metrics unavailable: ${data.metrics_error}</span>`);
-                    }
                 } else {
-                    resetTrafficDbMetrics();
                     log(`<span class="text-red-400">Error: ${data.error}</span>`);
                 }
             } catch (e) {
-                resetTrafficDbMetrics();
                 log(`<span class="text-red-400">Fatal: ${e.message}</span>`);
             }
         }
