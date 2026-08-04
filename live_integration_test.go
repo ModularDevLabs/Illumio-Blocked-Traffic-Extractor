@@ -20,7 +20,11 @@ func loadLiveTestProfile(t *testing.T) PCEProfile {
 
 	profilePath := os.Getenv("PCE_PROFILE_PATH")
 	if strings.TrimSpace(profilePath) == "" {
-		profilePath = "pce_profiles.json"
+		var err error
+		profilePath, err = getConfigPath()
+		if err != nil {
+			t.Fatalf("locate default profile file: %v", err)
+		}
 	}
 
 	data, err := os.ReadFile(profilePath)

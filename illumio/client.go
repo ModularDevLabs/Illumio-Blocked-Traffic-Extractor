@@ -7,11 +7,25 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
+
+const (
+	maxResponseBodySize = 256 << 20
+	maxCreateAttempts   = 5
+)
+
+func responseSnippet(data []byte) string {
+	const maxSnippet = 4096
+	if len(data) <= maxSnippet {
+		return string(data)
+	}
+	return string(data[:maxSnippet]) + "...[truncated]"
+}
 
 type Client struct {
 	PCEURL        string
@@ -25,14 +39,48 @@ type Client struct {
 }
 
 func NewClient(pceUrl, orgId, apiKey, apiSecret string) *Client {
+	baseURL := strings.TrimSuffix(strings.TrimSpace(pceUrl), "/")
 	return &Client{
-		PCEURL:    pceUrl,
+		PCEURL:    baseURL,
 		OrgID:     orgId,
 		APIKey:    apiKey,
 		APISecret: apiSecret,
-		HTTP:      &http.Client{Timeout: 60 * time.Second},
+		HTTP: &http.Client{
+			Timeout: 60 * time.Second,
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				if len(via) >= 10 {
+					return fmt.Errorf("too many redirects")
+				}
+				base, err := url.Parse(baseURL)
+				if err != nil || !sameOriginURL(base, req.URL) {
+					return fmt.Errorf("cross-origin redirect rejected")
+				}
+				return nil
+			},
+		},
 		RateLimit: make(chan bool, 1),
 	}
+}
+
+func sameOriginURL(left, right *url.URL) bool {
+	return left != nil && right != nil &&
+		strings.EqualFold(left.Scheme, right.Scheme) &&
+		strings.EqualFold(left.Host, right.Host)
+}
+
+func (c *Client) validateRequestURL(raw string) error {
+	base, err := url.Parse(c.PCEURL)
+	if err != nil {
+		return fmt.Errorf("invalid PCE URL: %w", err)
+	}
+	target, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("invalid PCE request URL: %w", err)
+	}
+	if !sameOriginURL(base, target) {
+		return fmt.Errorf("cross-origin PCE request rejected")
+	}
+	return nil
 }
 
 func (c *Client) buildURL(path string) string {
@@ -67,6 +115,9 @@ func (c *Client) requestWithHeaders(ctx context.Context, method, path string, bo
 	}
 
 	url := c.buildURL(path)
+	if err := c.validateRequestURL(url); err != nil {
+		return nil, 0, nil, err
+	}
 	var bodyReader io.Reader
 	if body != nil {
 		jsonBody, err := json.Marshal(body)
@@ -94,7 +145,13 @@ func (c *Client) requestWithHeaders(ctx context.Context, method, path string, bo
 	}
 	defer resp.Body.Close()
 
-	data, _ := io.ReadAll(resp.Body)
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBodySize+1))
+	if err != nil {
+		return nil, resp.StatusCode, resp.Header.Clone(), fmt.Errorf("read PCE response: %w", err)
+	}
+	if len(data) > maxResponseBodySize {
+		return nil, resp.StatusCode, resp.Header.Clone(), fmt.Errorf("PCE response exceeded %d MiB limit", maxResponseBodySize>>20)
+	}
 
 	if resp.StatusCode == 429 {
 		c.Mu.Lock()
@@ -104,6 +161,12 @@ func (c *Client) requestWithHeaders(ctx context.Context, method, path string, bo
 	}
 
 	return data, resp.StatusCode, resp.Header.Clone(), nil
+}
+
+func (c *Client) deleteAsyncResource(path string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	_, _, _, _ = c.requestWithHeaders(ctx, http.MethodDelete, path, nil, nil)
 }
 
 func (c *Client) request(ctx context.Context, method, path string, body interface{}) ([]byte, int, error) {
@@ -162,7 +225,7 @@ func (c *Client) getCollection(ctx context.Context, path string, target interfac
 					if resultCode != http.StatusOK {
 						return fmt.Errorf("async collection download failed (HTTP %d)", resultCode)
 					}
-					_, _, _, _ = c.requestWithHeaders(context.Background(), "DELETE", jobPath, nil, nil)
+					c.deleteAsyncResource(jobPath)
 					return json.Unmarshal(resultData, target)
 				case "failed":
 					return fmt.Errorf("async collection job failed")
@@ -280,33 +343,48 @@ func (c *Client) GetTrafficFlowsDatabaseMetrics(ctx context.Context) (TrafficFlo
 }
 
 func (c *Client) FetchDayOfTraffic(ctx context.Context, req AsyncQueryRequest, logFn func(string)) ([]TrafficFlow, error) {
+	if len(req.StartDate) < 10 {
+		return nil, fmt.Errorf("invalid query start date")
+	}
 	req.MaxResults = 200000
 	req.PolicyDecisions = []string{"blocked"}
 	req.QueryName = fmt.Sprintf("BT_%s_%d", req.StartDate[:10], time.Now().UnixNano()%1000)
 
 	// 1. Create
 	var queryUUID string
-	for {
+	for attempt := 1; attempt <= maxCreateAttempts; attempt++ {
 		data, code, err := c.request(ctx, "POST", "traffic_flows/async_queries", req)
 		if err == nil && (code == 201 || code == 202) {
 			var status AsyncQueryStatus
-			json.Unmarshal(data, &status)
+			if err := json.Unmarshal(data, &status); err != nil {
+				return nil, fmt.Errorf("decode PCE query creation response: %w", err)
+			}
 			parts := strings.Split(status.Href, "/")
-			if len(parts) > 0 {
+			if len(parts) > 0 && parts[len(parts)-1] != "" {
 				queryUUID = parts[len(parts)-1]
 				break
 			}
+			return nil, fmt.Errorf("PCE query creation response did not contain a query identifier")
 		}
 		if code == 406 || code == 400 || code == 401 || code == 403 {
-			return nil, fmt.Errorf("PCE rejected request (HTTP %d): %s", code, string(data))
+			return nil, fmt.Errorf("PCE rejected request (HTTP %d): %s", code, responseSnippet(data))
+		}
+		if attempt == maxCreateAttempts {
+			if err != nil {
+				return nil, fmt.Errorf("create PCE query after %d attempts: %w", attempt, err)
+			}
+			return nil, fmt.Errorf("create PCE query after %d attempts: HTTP %d", attempt, code)
+		}
+		if logFn != nil {
+			logFn(fmt.Sprintf("PCE query creation attempt %d/%d failed; retrying...", attempt, maxCreateAttempts))
 		}
 		select {
 		case <-time.After(10 * time.Second):
-			continue
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		}
 	}
+	defer c.deleteAsyncResource(fmt.Sprintf("traffic_flows/async_queries/%s", queryUUID))
 
 	// 2. Poll
 	backoff := 5 * time.Second
@@ -314,11 +392,13 @@ func (c *Client) FetchDayOfTraffic(ctx context.Context, req AsyncQueryRequest, l
 		data, code, err := c.request(ctx, "GET", fmt.Sprintf("traffic_flows/async_queries/%s", queryUUID), nil)
 		if err == nil && code == 200 {
 			var status AsyncQueryStatus
-			json.Unmarshal(data, &status)
-			if status.Status == "completed" {
+			if err := json.Unmarshal(data, &status); err != nil {
+				return nil, fmt.Errorf("decode PCE query status: %w", err)
+			}
+			if strings.EqualFold(status.Status, "completed") {
 				break
 			}
-			if status.Status == "failed" {
+			if strings.EqualFold(status.Status, "failed") {
 				return nil, fmt.Errorf("PCE query failed")
 			}
 		}
@@ -328,22 +408,26 @@ func (c *Client) FetchDayOfTraffic(ctx context.Context, req AsyncQueryRequest, l
 				backoff = time.Duration(float64(backoff) * 1.5)
 			}
 		case <-ctx.Done():
-			c.request(context.Background(), "DELETE", fmt.Sprintf("traffic_flows/async_queries/%s", queryUUID), nil)
 			return nil, ctx.Err()
 		}
 	}
 
 	// 3. Download
 	data, code, err := c.request(ctx, "GET", fmt.Sprintf("traffic_flows/async_queries/%s/download", queryUUID), nil)
-	if err != nil || code != 200 {
+	if err != nil {
+		return nil, fmt.Errorf("download PCE query result: %w", err)
+	}
+	if code != 200 {
 		return nil, fmt.Errorf("download failed (HTTP %d)", code)
 	}
 
 	var raw []map[string]interface{}
-	json.Unmarshal(data, &raw)
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, fmt.Errorf("decode PCE query result: %w", err)
+	}
 
 	flows := make([]TrafficFlow, 0, len(raw))
-	for _, r := range raw {
+	for rowIndex, r := range raw {
 		f := TrafficFlow{}
 		if src, ok := r["src"].(map[string]interface{}); ok {
 			if v, ok := src["ip"].(string); ok {
@@ -386,13 +470,26 @@ func (c *Client) FetchDayOfTraffic(ctx context.Context, req AsyncQueryRequest, l
 		}
 		if ts, ok := r["timestamp_range"].(map[string]interface{}); ok {
 			if v, ok := ts["first_detected"].(string); ok {
-				t, _ := time.Parse(time.RFC3339, v)
-				f.Timestamp = t
+				f.FirstDetected, err = time.Parse(time.RFC3339, v)
+				if err != nil {
+					return nil, fmt.Errorf("decode PCE result row %d first_detected: %w", rowIndex+1, err)
+				}
 			}
+			if v, ok := ts["last_detected"].(string); ok {
+				f.LastDetected, err = time.Parse(time.RFC3339, v)
+				if err != nil {
+					return nil, fmt.Errorf("decode PCE result row %d last_detected: %w", rowIndex+1, err)
+				}
+			}
+		}
+		if f.FirstDetected.IsZero() {
+			return nil, fmt.Errorf("PCE result row %d is missing first_detected", rowIndex+1)
+		}
+		if f.LastDetected.IsZero() {
+			f.LastDetected = f.FirstDetected
 		}
 		flows = append(flows, f)
 	}
 
-	c.request(context.Background(), "DELETE", fmt.Sprintf("traffic_flows/async_queries/%s", queryUUID), nil)
 	return flows, nil
 }

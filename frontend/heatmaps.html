@@ -4,9 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Illumio Traffic Heatmaps</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/assets/tailwind.css">
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
         :root {
             --bg: #030712;
             --panel: #111827;
@@ -47,7 +46,7 @@
             --warning: #f97607;
         }
         body {
-            font-family: 'Inter', sans-serif;
+            font-family: Inter, ui-sans-serif, system-ui, sans-serif;
             background: linear-gradient(180deg, var(--bg), color-mix(in srgb, var(--bg) 84%, black));
             color: var(--text);
         }
@@ -153,14 +152,14 @@
             </div>
             <div class="flex flex-wrap items-center gap-3">
                 <div class="flex rounded-xl p-1 panel-soft">
-                    <button id="defaultThemeBtn" type="button" onclick="applyTheme('default')" class="theme-button active rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em]">Dark</button>
-                    <button id="illumioThemeBtn" type="button" onclick="applyTheme('illumio')" class="theme-button rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em]">Illumio Dark</button>
-                    <button id="illumioLightThemeBtn" type="button" onclick="applyTheme('illumio-light')" class="theme-button rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em]">Illumio Light</button>
+                    <button id="defaultThemeBtn" type="button" class="theme-button active rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em]">Dark</button>
+                    <button id="illumioThemeBtn" type="button" class="theme-button rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em]">Illumio Dark</button>
+                    <button id="illumioLightThemeBtn" type="button" class="theme-button rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em]">Illumio Light</button>
                 </div>
                 <a href="/" class="inline-flex items-center rounded-lg panel-soft px-4 py-2 text-sm font-semibold">Back to Extractor</a>
                 <a href="/summary" class="inline-flex items-center rounded-lg panel-soft px-4 py-2 text-sm font-semibold">Detailed Analytics</a>
                 <a href="/executive-summary" class="inline-flex items-center rounded-lg panel-soft px-4 py-2 text-sm font-semibold">Executive Summary</a>
-                <button onclick="loadHeatmaps()" class="inline-flex items-center rounded-lg px-4 py-2 text-sm font-semibold text-white" style="background: var(--accent-strong);">Refresh</button>
+                <button id="refreshHeatmapsBtn" class="inline-flex items-center rounded-lg px-4 py-2 text-sm font-semibold text-white" style="background: var(--accent-strong);">Refresh</button>
             </div>
         </div>
 
@@ -292,6 +291,8 @@
     <script>
         let latestInsights = {};
         let currentMode = 'env';
+		let primaryDimensionName = 'Environment';
+		let secondaryDimensionName = 'Application';
         let selectedCellKey = null;
         let selectedDrilldownPair = null;
         const filterState = {
@@ -325,6 +326,22 @@
                 .replaceAll('"', '&quot;')
                 .replaceAll("'", '&#39;');
         }
+
+		function dimensionName(key, fallback) {
+			const value = String(key || '').trim();
+			if (!value) return fallback;
+			if (value.toLowerCase() === 'env') return 'Environment';
+			if (value.toLowerCase() === 'app') return 'Application';
+			return value;
+		}
+
+		function applyDimensionMetadata(insights) {
+			primaryDimensionName = dimensionName(insights.primary_label_key, 'Environment');
+			secondaryDimensionName = dimensionName(insights.secondary_label_key, 'Application');
+			document.getElementById('envModeBtn').innerText = primaryDimensionName;
+			document.getElementById('appModeBtn').innerText = secondaryDimensionName;
+			document.getElementById('combinedModeBtn').innerText = `${primaryDimensionName} + ${secondaryDimensionName}`;
+		}
 
         function renderCheckboxFilter(containerId, items, stateKey, placeholder, options = {}) {
             const container = document.getElementById(containerId);
@@ -427,15 +444,15 @@
             document.getElementById('appModeBtn').classList.toggle('active', mode === 'app');
             document.getElementById('combinedModeBtn').classList.toggle('active', mode === 'combined');
             document.getElementById('heatmapTitle').innerText = mode === 'env'
-                ? 'Environment Heatmap'
+				? `${primaryDimensionName} Heatmap`
                 : mode === 'app'
-                    ? 'Application Heatmap'
-                    : 'Environment + Application Heatmap';
+					? `${secondaryDimensionName} Heatmap`
+					: `${primaryDimensionName} + ${secondaryDimensionName} Heatmap`;
             document.getElementById('heatmapSubtitle').innerText = mode === 'env'
-                ? 'Source environment to destination environment'
+				? `Source ${primaryDimensionName} to destination ${primaryDimensionName}`
                 : mode === 'app'
-                    ? 'Source application to destination application'
-                    : 'Source environment/application to destination environment/application';
+					? `Source ${secondaryDimensionName} to destination ${secondaryDimensionName}`
+					: `Source ${primaryDimensionName}/${secondaryDimensionName} to destination ${primaryDimensionName}/${secondaryDimensionName}`;
             selectedCellKey = null;
             populateFilterOptions();
             renderHeatmap();
@@ -626,11 +643,11 @@
 
             let html = '<table class="heatmap-table text-xs"><thead><tr>';
             const headerLabel = currentMode === 'env'
-                ? 'Source Env \\ Destination Env'
+				? `Source ${primaryDimensionName} \\ Destination ${primaryDimensionName}`
                 : currentMode === 'app'
-                    ? 'Source App \\ Destination App'
-                    : 'Source Env/App \\ Destination Env/App';
-            html += `<th class="heatmap-row-header px-3 py-2 text-left text-gray-500">${headerLabel}</th>`;
+					? `Source ${secondaryDimensionName} \\ Destination ${secondaryDimensionName}`
+					: `Source ${primaryDimensionName}/${secondaryDimensionName} \\ Destination ${primaryDimensionName}/${secondaryDimensionName}`;
+			html += `<th class="heatmap-row-header px-3 py-2 text-left text-gray-500">${escapeHtml(headerLabel)}</th>`;
             destinationList.forEach((destination) => {
                 html += `<th class="px-3 py-2 text-left text-gray-500">${escapeHtml(destination)}</th>`;
             });
@@ -685,9 +702,9 @@
 
         function renderPage(payload) {
             latestInsights = payload.insights || {};
+			applyDimensionMetadata(latestInsights);
             document.getElementById('fileLabel').innerText = `Latest CSV: ${payload.fileName}`;
-            populateFilterOptions();
-            renderHeatmap();
+			applyMode(currentMode);
         }
 
         async function loadHeatmaps() {
@@ -715,6 +732,10 @@
 
         window.onload = () => {
             loadSavedTheme();
+            document.getElementById('defaultThemeBtn').addEventListener('click', () => applyTheme('default'));
+            document.getElementById('illumioThemeBtn').addEventListener('click', () => applyTheme('illumio'));
+            document.getElementById('illumioLightThemeBtn').addEventListener('click', () => applyTheme('illumio-light'));
+            document.getElementById('refreshHeatmapsBtn').addEventListener('click', loadHeatmaps);
             document.getElementById('envModeBtn').addEventListener('click', () => applyMode('env'));
             document.getElementById('appModeBtn').addEventListener('click', () => applyMode('app'));
             document.getElementById('combinedModeBtn').addEventListener('click', () => applyMode('combined'));

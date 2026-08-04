@@ -71,7 +71,8 @@ type TrafficFlow struct {
 	Proto          int         `json:"proto"`
 	DstPort        int         `json:"dst_port"`
 	NumConnections int         `json:"num_connections"`
-	Timestamp      time.Time   `json:"timestamp"`
+	FirstDetected  time.Time   `json:"first_detected"`
+	LastDetected   time.Time   `json:"last_detected"`
 	SrcLabels      []FlowLabel `json:"src_labels"`
 	DstLabels      []FlowLabel `json:"dst_labels"`
 	// Identifying fields for accurate merging

@@ -4,9 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Illumio Blocked Traffic Extractor</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/assets/tailwind.css">
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap');
         :root {
             --bg: #111827;
             --shell: #1f2937;
@@ -65,7 +64,7 @@
             --link-border: #f97607;
         }
         body {
-            font-family: 'Inter', sans-serif;
+            font-family: Inter, ui-sans-serif, system-ui, sans-serif;
             background: linear-gradient(180deg, var(--bg), color-mix(in srgb, var(--bg) 82%, black));
             color: var(--text);
             transition: background 200ms ease, color 200ms ease;
@@ -185,9 +184,9 @@
         <div class="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <h1 class="themed-title text-3xl font-bold text-center uppercase tracking-widest">Illumio Blocked Traffic Extractor</h1>
             <div class="flex rounded-xl p-1 themed-soft-panel">
-                <button id="defaultThemeBtn" type="button" onclick="applyTheme('default')" class="theme-button active rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em]">Dark</button>
-                <button id="illumioThemeBtn" type="button" onclick="applyTheme('illumio')" class="theme-button rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em]">Illumio Dark</button>
-                <button id="illumioLightThemeBtn" type="button" onclick="applyTheme('illumio-light')" class="theme-button rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em]">Illumio Light</button>
+                <button id="defaultThemeBtn" type="button" class="theme-button active rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em]">Dark</button>
+                <button id="illumioThemeBtn" type="button" class="theme-button rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em]">Illumio Dark</button>
+                <button id="illumioLightThemeBtn" type="button" class="theme-button rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em]">Illumio Light</button>
             </div>
         </div>
         
@@ -195,14 +194,14 @@
         <div class="mb-8 p-4 rounded-lg border themed-panel">
             <h2 class="text-sm font-bold themed-muted uppercase tracking-wider mb-4">PCE Profiles</h2>
             <div class="flex space-x-4 mb-4">
-                <select id="profileSelect" onchange="loadSelectedProfile()" class="flex-1 bg-gray-800 border border-gray-600 rounded p-2 outline-none">
+                <select id="profileSelect" class="flex-1 bg-gray-800 border border-gray-600 rounded p-2 outline-none">
                     <option value="">-- Select a Saved PCE --</option>
                 </select>
-                <button onclick="deleteProfile()" class="bg-red-600 hover:bg-red-700 px-4 py-2 rounded font-bold text-xs uppercase transition">Delete</button>
+                <button id="deleteProfileBtn" class="bg-red-600 hover:bg-red-700 px-4 py-2 rounded font-bold text-xs uppercase transition">Delete</button>
             </div>
             <div class="flex space-x-4">
                 <input id="profile_name" type="text" placeholder="New Profile Name" class="flex-1 bg-gray-800 border border-gray-600 rounded p-2 outline-none text-sm">
-                <button onclick="saveProfile()" class="bg-blue-600 hover:bg-blue-700 px-6 py-2 rounded font-bold text-xs uppercase transition">Save Current Config</button>
+                <button id="saveProfileBtn" class="bg-blue-600 hover:bg-blue-700 px-6 py-2 rounded font-bold text-xs uppercase transition">Save Current Config</button>
             </div>
         </div>
 
@@ -220,14 +219,14 @@
                 <label class="block text-xs font-bold text-gray-400 mb-1 italic uppercase">API Key</label>
                 <div class="flex gap-2">
                     <input id="api_key" type="password" placeholder="api_xxxxxxxx" autocomplete="new-password" autocapitalize="none" spellcheck="false" data-lpignore="true" class="flex-1 bg-gray-700 border border-gray-600 rounded p-2 outline-none">
-                    <button type="button" onclick="toggleSecretField('api_key', this)" class="bg-gray-600 hover:bg-gray-500 border border-gray-500 rounded px-3 text-xs font-bold uppercase">Show</button>
+                    <button id="toggleApiKeyBtn" type="button" class="bg-gray-600 hover:bg-gray-500 border border-gray-500 rounded px-3 text-xs font-bold uppercase">Show</button>
                 </div>
             </div>
             <div class="col-span-1">
                 <label class="block text-xs font-bold text-gray-400 mb-1 italic uppercase">API Secret</label>
                 <div class="flex gap-2">
                     <input id="api_secret" type="password" placeholder="xxxxxxxxxxxxxxxx" autocomplete="new-password" autocapitalize="none" spellcheck="false" data-lpignore="true" class="flex-1 bg-gray-700 border border-gray-600 rounded p-2 outline-none">
-                    <button type="button" onclick="toggleSecretField('api_secret', this)" class="bg-gray-600 hover:bg-gray-500 border border-gray-500 rounded px-3 text-xs font-bold uppercase">Show</button>
+                    <button id="toggleApiSecretBtn" type="button" class="bg-gray-600 hover:bg-gray-500 border border-gray-500 rounded px-3 text-xs font-bold uppercase">Show</button>
                 </div>
             </div>
         </div>
@@ -237,7 +236,7 @@
                 <div>
                     <h2 class="text-sm font-bold themed-muted uppercase tracking-wider">Traffic DB Availability</h2>
                     <p id="trafficDbStatus" class="mt-2 text-sm themed-muted">Use this panel to load the PCE traffic database retention metrics.</p>
-                    <button type="button" onclick="loadTrafficDbMetrics()" class="mt-3 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold uppercase tracking-wide text-white transition hover:bg-indigo-500">
+                    <button id="trafficDbMetricsBtn" type="button" class="mt-3 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold uppercase tracking-wide text-white transition hover:bg-indigo-500">
                         Load Traffic DB Metrics
                     </button>
                 </div>
@@ -260,7 +259,7 @@
 
         <!-- NEW LOCATION FOR DISCOVERY BUTTON -->
         <div class="mb-8 flex flex-col gap-3 xl:flex-row xl:items-center">
-            <button onclick="loadDiscovery()" id="discoverBtn" class="w-full xl:flex-[0_0_24rem] bg-indigo-600 hover:bg-indigo-700 py-3 rounded font-bold text-sm uppercase transition shadow-lg border-b-4 border-indigo-900 active:border-b-0">
+            <button id="discoverBtn" class="w-full xl:flex-[0_0_24rem] bg-indigo-600 hover:bg-indigo-700 py-3 rounded font-bold text-sm uppercase transition shadow-lg border-b-4 border-indigo-900 active:border-b-0">
                 1. Load Policy Objects from PCE
             </button>
             <div id="discoveryProgressWrap" class="hidden w-full rounded-lg border themed-soft-panel px-4 py-3 xl:flex-1">
@@ -270,6 +269,29 @@
                 </div>
                 <div class="mt-3 w-full themed-panel rounded-full h-3 overflow-hidden">
                     <div id="discoveryProgressBar" class="bg-indigo-500 h-full transition-all duration-300" style="width: 0%"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="mb-8 rounded-lg border themed-soft-panel p-4">
+            <div class="mb-4">
+                <h2 class="text-sm font-bold uppercase tracking-wider">Analysis Label Types</h2>
+                <p class="mt-1 text-xs themed-muted">Choose the two label dimensions used by dashboards, heatmaps, and executive analysis. Load policy objects to populate custom types.</p>
+            </div>
+            <div class="grid gap-4 md:grid-cols-2">
+                <div>
+                    <label for="analysis_primary_label" class="mb-1 block text-xs font-bold uppercase themed-muted">Primary Dimension</label>
+                    <select id="analysis_primary_label" class="w-full rounded border border-gray-600 bg-gray-700 p-2 outline-none">
+                        <option value="env">env</option>
+                        <option value="app">app</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="analysis_secondary_label" class="mb-1 block text-xs font-bold uppercase themed-muted">Secondary Dimension</label>
+                    <select id="analysis_secondary_label" class="w-full rounded border border-gray-600 bg-gray-700 p-2 outline-none">
+                        <option value="app">app</option>
+                        <option value="env">env</option>
+                    </select>
                 </div>
             </div>
         </div>
@@ -289,7 +311,7 @@
             <div class="col-span-2 relative">
                 <div class="mb-2 flex items-center justify-between gap-3">
                     <label class="block text-sm font-semibold text-green-300 uppercase tracking-tighter">Services (Names or Proto:Port - empty for all)</label>
-                    <button type="button" onclick="appendRiskyServices()" class="risky-button shrink-0 rounded border px-3 py-1 text-xs font-bold uppercase tracking-wide">
+                    <button id="riskyServicesBtn" type="button" class="risky-button shrink-0 rounded border px-3 py-1 text-xs font-bold uppercase tracking-wide">
                         Add Risky Services
                     </button>
                 </div>
@@ -350,9 +372,9 @@
         </div>
 
         <div class="flex space-x-4 mb-8">
-            <button onclick="startFetch()" id="startBtn" class="flex-1 bg-green-600 hover:bg-green-700 font-bold py-3 px-6 rounded-lg transition duration-200 uppercase tracking-widest shadow-lg border-b-4 border-green-900 active:border-b-0">2. Start Fetch</button>
-            <button onclick="cancelFetch()" id="cancelBtn" class="hidden bg-red-600 hover:bg-red-700 font-bold py-3 px-6 rounded-lg transition duration-200 uppercase tracking-widest text-white shadow-xl">Cancel</button>
-            <button onclick="testConnection()" id="testBtn" class="bg-gray-600 hover:bg-gray-700 font-bold py-3 px-6 rounded-lg transition duration-200 uppercase tracking-widest px-8">Test</button>
+            <button id="startBtn" class="flex-1 bg-green-600 hover:bg-green-700 font-bold py-3 px-6 rounded-lg transition duration-200 uppercase tracking-widest shadow-lg border-b-4 border-green-900 active:border-b-0">2. Start Fetch</button>
+            <button id="cancelBtn" class="hidden bg-red-600 hover:bg-red-700 font-bold py-3 px-6 rounded-lg transition duration-200 uppercase tracking-widest text-white shadow-xl">Cancel</button>
+            <button id="testBtn" class="bg-gray-600 hover:bg-gray-700 font-bold py-3 px-6 rounded-lg transition duration-200 uppercase tracking-widest px-8">Test</button>
         </div>
 
         <div class="mb-8 hidden grid gap-3 md:grid-cols-3" id="summaryLinkWrap">
@@ -371,11 +393,11 @@
             <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
                     <h2 class="text-sm font-bold uppercase tracking-wider">Upload Existing CSV</h2>
-                    <p class="mt-1 text-xs themed-muted">Import a previously exported CSV from this tool and jump directly to the analytics dashboard.</p>
+                    <p class="mt-1 text-xs themed-muted">Import a previously exported CSV using the analysis label types selected above.</p>
                 </div>
                 <div class="flex flex-col gap-3 md:flex-row md:items-center">
                     <input id="mainCsvFile" type="file" accept=".csv,text/csv" class="text-sm themed-muted file:mr-4 file:rounded-lg file:border-0 file:px-4 file:py-2 file:text-sm file:font-semibold">
-                    <button type="button" onclick="uploadCSVAndOpenSummary()" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold hover:bg-emerald-500">
+                    <button id="uploadCSVBtn" type="button" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold hover:bg-emerald-500">
                         Upload CSV
                     </button>
                 </div>
@@ -441,6 +463,7 @@
             'UDP:3702'
         ];
         let pceLabels = [];
+		let pceLabelTypes = [];
         let pceServices = [];
         let pceIPLists = [];
         let pceLabelGroups = [];
@@ -450,6 +473,7 @@
 
         function clearDiscoveryData() {
             pceLabels = [];
+			pceLabelTypes = [];
             pceServices = [];
             pceIPLists = [];
             pceLabelGroups = [];
@@ -457,6 +481,7 @@
             pceVServices = [];
             pceVServers = [];
             setupAutocomplete();
+			populateAnalysisLabelTypes();
         }
 
         function applyTheme(theme) {
@@ -473,6 +498,21 @@
 
         window.onload = () => {
             loadSavedTheme();
+            document.getElementById('defaultThemeBtn').addEventListener('click', () => applyTheme('default'));
+            document.getElementById('illumioThemeBtn').addEventListener('click', () => applyTheme('illumio'));
+            document.getElementById('illumioLightThemeBtn').addEventListener('click', () => applyTheme('illumio-light'));
+            document.getElementById('profileSelect').addEventListener('change', loadSelectedProfile);
+            document.getElementById('deleteProfileBtn').addEventListener('click', deleteProfile);
+            document.getElementById('saveProfileBtn').addEventListener('click', saveProfile);
+            document.getElementById('toggleApiKeyBtn').addEventListener('click', (event) => toggleSecretField('api_key', event.currentTarget));
+            document.getElementById('toggleApiSecretBtn').addEventListener('click', (event) => toggleSecretField('api_secret', event.currentTarget));
+            document.getElementById('trafficDbMetricsBtn').addEventListener('click', loadTrafficDbMetrics);
+            document.getElementById('discoverBtn').addEventListener('click', loadDiscovery);
+            document.getElementById('riskyServicesBtn').addEventListener('click', appendRiskyServices);
+            document.getElementById('startBtn').addEventListener('click', startFetch);
+            document.getElementById('cancelBtn').addEventListener('click', cancelFetch);
+            document.getElementById('testBtn').addEventListener('click', testConnection);
+            document.getElementById('uploadCSVBtn').addEventListener('click', uploadCSVAndOpenSummary);
             fetchProfiles();
         };
 
@@ -497,30 +537,32 @@
             log('Fetching all Policy Objects from PCE...');
             startDiscoveryLogPolling();
             try {
-                const res = await fetch('/api/discovery', { method: 'POST', body: JSON.stringify(getConfig()) });
+                const res = await fetch('/api/discovery', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(getConfig()) });
                 const data = await res.json();
                 await flushBackendLogs();
                 if (data.success) {
                     pceLabels = data.labels || [];
+					pceLabelTypes = data.labelTypes || [];
                     pceServices = data.services || [];
                     pceIPLists = data.ipLists || [];
                     pceLabelGroups = data.labelGroups || [];
                     pceUserGroups = data.userGroups || [];
                     pceVServices = data.virtualServices || [];
                     pceVServers = data.virtualServers || [];
-                    log(`<span class="text-indigo-400 font-bold">Discovery complete! Loaded ${pceLabels.length} Labels, ${pceLabelGroups.length} Label Groups, ${pceIPLists.length} IP Lists, ${pceUserGroups.length} User Groups, ${pceVServices.length} Virtual Services, and ${pceVServers.length} Virtual Servers.</span>`);
+                    log(`Discovery complete! Loaded ${pceLabels.length} Labels, ${pceLabelGroups.length} Label Groups, ${pceIPLists.length} IP Lists, ${pceUserGroups.length} User Groups, ${pceVServices.length} Virtual Services, and ${pceVServers.length} Virtual Servers.`);
                     setupAutocomplete();
+					populateAnalysisLabelTypes();
                     updateDiscoveryProgress({ discoveryDone: 7, discoveryTotal: 7, discoveryActive: false });
                 } else {
                     clearDiscoveryData();
                     updateDiscoveryProgress({ discoveryDone: 0, discoveryTotal: 7, discoveryActive: false, discoveryError: data.error });
-                    log(`<span class="text-red-400">Discovery failed: ${data.error}</span>`);
+                    log(`Discovery failed: ${data.error}`);
                 }
             } catch (e) {
                 await flushBackendLogs();
                 clearDiscoveryData();
                 updateDiscoveryProgress({ discoveryDone: 0, discoveryTotal: 7, discoveryActive: false, discoveryError: e.message });
-                log(`<span class="text-red-400">Error: ${e.message}</span>`);
+                log(`Error: ${e.message}`);
             }
             stopDiscoveryLogPolling();
             btn.innerText = "1. Load Policy Objects from PCE";
@@ -598,6 +640,34 @@
             autocomplete(document.getElementById('services'), pceServices);
         }
 
+		function populateAnalysisLabelTypes(preferredPrimary, preferredSecondary) {
+			const primarySelect = document.getElementById('analysis_primary_label');
+			const secondarySelect = document.getElementById('analysis_secondary_label');
+			const requestedPrimary = preferredPrimary || primarySelect.value || 'env';
+			const requestedSecondary = preferredSecondary || secondarySelect.value || 'app';
+			const discoveredMatch = (value) => pceLabelTypes.find((key) => key.toLowerCase() === value.toLowerCase()) || value;
+			const currentPrimary = discoveredMatch(requestedPrimary);
+			const currentSecondary = discoveredMatch(requestedSecondary);
+			const seenKeys = new Set();
+			const keys = [currentPrimary, currentSecondary, ...pceLabelTypes, 'env', 'app'].filter((key) => {
+				if (!key || seenKeys.has(key.toLowerCase())) return false;
+				seenKeys.add(key.toLowerCase());
+				return true;
+			});
+
+			[primarySelect, secondarySelect].forEach((select) => {
+				select.replaceChildren();
+				keys.forEach((key) => {
+					const option = document.createElement('option');
+					option.value = key;
+					option.textContent = key;
+					select.appendChild(option);
+				});
+			});
+			primarySelect.value = currentPrimary;
+			secondarySelect.value = currentSecondary;
+		}
+
         function autocomplete(inp, arr) {
             let currentFocus;
             inp.addEventListener("input", function(e) {
@@ -615,9 +685,16 @@
                 for (i = 0; i < arr.length; i++) {
                     if (arr[i].toUpperCase().includes(currentVal.toUpperCase())) {
                         b = document.createElement("DIV");
-                        const regex = new RegExp(currentVal, "gi");
-                        b.innerHTML = arr[i].replace(regex, "<strong>$&</strong>");
-                        b.innerHTML += "<input type='hidden' value='" + arr[i] + "'>";
+                        const matchIndex = arr[i].toUpperCase().indexOf(currentVal.toUpperCase());
+                        b.appendChild(document.createTextNode(arr[i].slice(0, matchIndex)));
+                        const strong = document.createElement('strong');
+                        strong.textContent = arr[i].slice(matchIndex, matchIndex + currentVal.length);
+                        b.appendChild(strong);
+                        b.appendChild(document.createTextNode(arr[i].slice(matchIndex + currentVal.length)));
+                        const hidden = document.createElement('input');
+                        hidden.type = 'hidden';
+                        hidden.value = arr[i];
+                        b.appendChild(hidden);
                         b.addEventListener("click", function(e) {
                             parts[parts.length - 1] = " " + this.getElementsByTagName("input")[0].value;
                             inp.value = parts.join(",").trim() + ", ";
@@ -657,8 +734,10 @@
             document.getElementById('profile_name').value = p.name || '';
             document.getElementById('pce_url').value = p.pce_url || '';
             document.getElementById('org_id').value = p.org_id || '';
-            document.getElementById('api_key').value = p.api_key || '';
-            document.getElementById('api_secret').value = p.api_secret || '';
+            document.getElementById('api_key').value = '';
+            document.getElementById('api_secret').value = '';
+            document.getElementById('api_key').placeholder = 'Stored securely in selected profile';
+            document.getElementById('api_secret').placeholder = 'Stored securely in selected profile';
             document.getElementById('src_labels').value = p.src_labels || '';
             document.getElementById('dst_labels').value = p.dst_labels || '';
             document.getElementById('exclude_src').value = p.exclude_src || '';
@@ -670,28 +749,46 @@
             document.getElementById('chunk_interval').value = p.chunk_interval || '24h';
             document.getElementById('start_date').value = p.start_date || '';
             document.getElementById('end_date').value = p.end_date || '';
+			populateAnalysisLabelTypes(p.analysis_primary_label || 'env', p.analysis_secondary_label || 'app');
         }
 
         async function saveProfile() {
             const name = document.getElementById('profile_name').value;
             if (!name) return alert("Please enter a profile name");
             const config = getConfig(); config.name = name;
-            await fetch('/api/profiles/save', { method: 'POST', body: JSON.stringify(config) });
-            fetchProfiles(); log(`Profile '${name}' saved.`);
+            delete config.profile_name;
+            const res = await fetch('/api/profiles/save', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(config) });
+            const data = await res.json();
+            if (!res.ok || !data.success) {
+                log(`Profile save failed: ${data.error || res.statusText}`);
+                return;
+            }
+            await fetchProfiles();
+            document.getElementById('profileSelect').value = name;
+            log(`Profile '${name}' saved.`);
         }
 
         async function deleteProfile() {
             const name = document.getElementById('profileSelect').value;
             if (!name) return;
             if (!confirm(`Delete profile '${name}'?`)) return;
-            await fetch('/api/profiles/delete', { method: 'POST', body: JSON.stringify({name}) });
-            fetchProfiles(); log(`Profile '${name}' deleted.`);
+            const res = await fetch('/api/profiles/delete', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({name}) });
+            const data = await res.json();
+            if (!res.ok || !data.success) {
+                log(`Profile delete failed: ${data.error || res.statusText}`);
+                return;
+            }
+            await fetchProfiles(); log(`Profile '${name}' deleted.`);
         }
 
         function log(msg) {
             const div = document.createElement('div');
             div.className = 'mb-1';
-            div.innerHTML = `<span class="text-gray-500">[${new Date().toLocaleTimeString()}]</span> ${msg}`;
+            const timestamp = document.createElement('span');
+            timestamp.className = 'text-gray-500';
+            timestamp.textContent = `[${new Date().toLocaleTimeString()}] `;
+            div.appendChild(timestamp);
+            div.appendChild(document.createTextNode(String(msg)));
             const box = document.getElementById('logBox');
             box.appendChild(div);
             box.scrollTop = box.scrollHeight;
@@ -729,11 +826,11 @@
         async function loadTrafficDbMetrics() {
             log('Loading traffic DB metrics...');
             try {
-                const res = await fetch('/api/traffic-db-metrics', { method: 'POST', body: JSON.stringify(getConfig()) });
+                const res = await fetch('/api/traffic-db-metrics', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(getConfig()) });
                 const data = await res.json();
                 if (!data.success) {
                     renderTrafficDbMetrics(null, data.error || 'Unknown error');
-                    log(`<span class="text-red-400">Traffic DB metrics error: ${data.error || 'Unknown error'}</span>`);
+                    log(`Traffic DB metrics error: ${data.error || 'Unknown error'}`);
                     return;
                 }
                 renderTrafficDbMetrics(data.metrics, '');
@@ -742,7 +839,7 @@
                 }
             } catch (e) {
                 renderTrafficDbMetrics(null, e.message);
-                log(`<span class="text-red-400">Traffic DB metrics fatal: ${e.message}</span>`);
+                log(`Traffic DB metrics fatal: ${e.message}`);
             }
         }
 
@@ -778,6 +875,8 @@
 
             const formData = new FormData();
             formData.append('file', file);
+			formData.append('primary_label_key', document.getElementById('analysis_primary_label').value || 'env');
+			formData.append('secondary_label_key', document.getElementById('analysis_secondary_label').value || 'app');
 
             log(`Importing CSV '${file.name}' for analytics review...`);
 
@@ -788,33 +887,33 @@
                 });
                 const data = await res.json();
                 if (!data.success) {
-                    log(`<span class="text-red-400">CSV import failed: ${data.error || 'Unknown error'}</span>`);
+                    log(`CSV import failed: ${data.error || 'Unknown error'}`);
                     return;
                 }
                 window.location.href = '/summary';
             } catch (e) {
-                log(`<span class="text-red-400">CSV import failed: ${e.message}</span>`);
+                log(`CSV import failed: ${e.message}`);
             }
         }
 
         async function testConnection() {
             log('Testing connection...');
             try {
-                const res = await fetch('/api/test', { method: 'POST', body: JSON.stringify(getConfig()) });
+                const res = await fetch('/api/test', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(getConfig()) });
                 const data = await res.json();
                 if (data.success) {
-                    log(`<span class="text-green-400 font-bold underline italic">Success! Connection authenticated.</span>`);
+                    log('Success! Connection authenticated.');
                 } else {
-                    log(`<span class="text-red-400">Error: ${data.error}</span>`);
+                    log(`Error: ${data.error}`);
                 }
             } catch (e) {
-                log(`<span class="text-red-400">Fatal: ${e.message}</span>`);
+                log(`Fatal: ${e.message}`);
             }
         }
 
         async function cancelFetch() {
-            log('<span class="text-red-400 font-bold">Sending Cancel signal...</span>');
-            await fetch('/api/cancel', { method: 'POST' });
+            log('Sending cancel signal...');
+            await fetch('/api/cancel', { method: 'POST', headers: {'Content-Type': 'application/json'} });
         }
 
         async function startFetch() {
@@ -824,7 +923,7 @@
             document.getElementById('summaryLinkWrap').classList.add('hidden');
             const dateRange = getRequestedDateRange();
             if (dateRange.error) {
-                log(`<span class="text-red-400">Start failed: ${dateRange.error}</span>`);
+                log(`Start failed: ${dateRange.error}`);
                 resetButtons();
                 return;
             }
@@ -835,15 +934,15 @@
                 log(`Starting ${dateRange.days}-day extraction using ${chunkInterval} chunks.`);
             }
             try {
-                const res = await fetch('/api/start', { method: 'POST', body: JSON.stringify(getConfig()) });
+                const res = await fetch('/api/start', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(getConfig()) });
                 const data = await res.json();
                 if (!data.success) {
-                    log(`<span class="text-red-400">Start failed: ${data.error || 'Unknown error'}</span>`);
+                    log(`Start failed: ${data.error || 'Unknown error'}`);
                     resetButtons();
                     return;
                 }
                 pollStatus();
-            } catch (e) { log(`<span class="text-red-400">Fatal: ${e.message}</span>`); resetButtons(); }
+            } catch (e) { log(`Fatal: ${e.message}`); resetButtons(); }
         }
 
         function pollStatus() {
@@ -863,11 +962,11 @@
                 if (data.done || data.cancelled) {
                     clearInterval(pollingInterval); resetButtons();
                     if (data.done && data.fileName) {
-                        log(`<span class="text-green-400 font-bold underline italic">COMPLETED: ${data.fileName}</span>`);
+                        log(`COMPLETED: ${data.fileName}`);
                         document.getElementById('summaryLinkWrap').classList.remove('hidden');
                     }
-                    if (data.done && !data.fileName && !data.cancelled) log(`<span class="text-red-400 font-bold italic">RUN FINISHED WITHOUT OUTPUT. Check logs for errors.</span>`);
-                    if (data.cancelled) log(`<span class="text-orange-400 font-bold italic">CANCELLED BY USER</span>`);
+                    if (data.done && !data.fileName && !data.cancelled) log('RUN FINISHED WITHOUT OUTPUT. Check logs for errors.');
+                    if (data.cancelled) log('CANCELLED BY USER');
                 }
             }, 1000);
         }
@@ -907,6 +1006,7 @@
         function getConfig() {
             const dateRange = getRequestedDateRange();
             return {
+                profile_name: document.getElementById('profileSelect').value,
                 pce_url: document.getElementById('pce_url').value,
                 org_id: document.getElementById('org_id').value,
                 api_key: document.getElementById('api_key').value,
@@ -921,7 +1021,9 @@
                 days: dateRange.days,
                 chunk_interval: document.getElementById('chunk_interval').value || '24h',
                 start_date: dateRange.start,
-                end_date: dateRange.end
+				end_date: dateRange.end,
+				analysis_primary_label: document.getElementById('analysis_primary_label').value || 'env',
+				analysis_secondary_label: document.getElementById('analysis_secondary_label').value || 'app'
             };
         }
     </script>
