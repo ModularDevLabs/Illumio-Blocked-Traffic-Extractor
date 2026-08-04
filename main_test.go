@@ -1,9 +1,12 @@
 package main
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -209,6 +212,16 @@ func TestExtractionDateRange(t *testing.T) {
 	})
 }
 
+func TestInclusiveCalendarDaysHandlesLongRanges(t *testing.T) {
+	t.Parallel()
+
+	start := time.Date(2000, time.January, 1, 0, 0, 0, 0, time.UTC)
+	end := time.Date(2400, time.December, 31, 0, 0, 0, 0, time.UTC)
+	if got, want := inclusiveCalendarDays(start, end), 146463; got != want {
+		t.Fatalf("inclusiveCalendarDays = %d, want %d", got, want)
+	}
+}
+
 func TestParseChunkInterval(t *testing.T) {
 	t.Parallel()
 
@@ -333,7 +346,7 @@ func TestSameOriginRequest(t *testing.T) {
 		referer string
 		want    bool
 	}{
-		{name: "no headers allowed", host: "localhost:8080", want: true},
+		{name: "missing origin evidence rejected", host: "localhost:8080", want: false},
 		{name: "matching origin allowed", host: "localhost:8080", origin: "http://localhost:8080", want: true},
 		{name: "matching referer allowed", host: "localhost:8080", referer: "http://localhost:8080/summary", want: true},
 		{name: "mismatched origin rejected", host: "localhost:8080", origin: "http://evil.example", want: false},
@@ -358,5 +371,291 @@ func TestSameOriginRequest(t *testing.T) {
 				t.Fatalf("sameOriginRequest() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestCanonicalFlowLabelsIsStableAndIncludesValues(t *testing.T) {
+	t.Parallel()
+
+	left := []illumio.FlowLabel{{Key: "Env", Value: "Prod"}, {Key: "App", Value: "API"}}
+	right := []illumio.FlowLabel{{Key: "App", Value: "API"}, {Key: "env", Value: "Prod"}}
+	if got, want := canonicalFlowLabels(left), canonicalFlowLabels(right); got != want {
+		t.Fatalf("canonical label keys differ by input order/case: %q != %q", got, want)
+	}
+	changed := []illumio.FlowLabel{{Key: "App", Value: "Web"}, {Key: "Env", Value: "Prod"}}
+	if canonicalFlowLabels(left) == canonicalFlowLabels(changed) {
+		t.Fatal("canonical label keys should distinguish different label values")
+	}
+}
+
+func TestCSVFormulaProtectionRoundTrips(t *testing.T) {
+	t.Parallel()
+
+	for _, value := range []string{"=cmd()", "+SUM(A1:A2)", "-1+2", "@payload"} {
+		protected := safeCSVCell(value)
+		if !strings.HasPrefix(protected, "'") {
+			t.Fatalf("safeCSVCell(%q) = %q, want apostrophe prefix", value, protected)
+		}
+		if got := normalizeImportedCSVCell(protected); got != value {
+			t.Fatalf("normalizeImportedCSVCell(%q) = %q, want %q", protected, got, value)
+		}
+	}
+	if got := safeCSVCell("normal"); got != "normal" {
+		t.Fatalf("safeCSVCell changed a safe value: %q", got)
+	}
+}
+
+func TestOutputCSVPathValidation(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	got, err := outputCSVPath(dir, "report")
+	if err != nil {
+		t.Fatalf("outputCSVPath returned error: %v", err)
+	}
+	if want := filepath.Join(dir, "report.csv"); got != want {
+		t.Fatalf("outputCSVPath = %q, want %q", got, want)
+	}
+	if _, err := outputCSVPath(dir, "../profiles.json"); err == nil {
+		t.Fatal("outputCSVPath should reject traversal filenames")
+	}
+	if _, err := outputCSVPath("relative", "report.csv"); err == nil {
+		t.Fatal("outputCSVPath should reject relative output directories")
+	}
+}
+
+func TestValidatePCEURL(t *testing.T) {
+	t.Parallel()
+
+	got, err := validatePCEURL(" https://pce.example.com:8443/ ")
+	if err != nil || got != "https://pce.example.com:8443" {
+		t.Fatalf("validatePCEURL returned %q, %v", got, err)
+	}
+	for _, invalid := range []string{"file:///tmp/pce", "https://user:pass@pce.example.com", "https://pce.example.com/api/v2", "https://pce.example.com?q=x"} {
+		if _, err := validatePCEURL(invalid); err == nil {
+			t.Fatalf("validatePCEURL(%q) should fail", invalid)
+		}
+	}
+}
+
+func TestValidatePort(t *testing.T) {
+	t.Parallel()
+
+	if got, err := validatePort(" 8080 "); err != nil || got != "8080" {
+		t.Fatalf("validatePort returned %q, %v", got, err)
+	}
+	for _, invalid := range []string{"", "0", "65536", "http"} {
+		if _, err := validatePort(invalid); err == nil {
+			t.Fatalf("validatePort(%q) should fail", invalid)
+		}
+	}
+}
+
+func TestLoopbackHost(t *testing.T) {
+	t.Parallel()
+
+	for _, host := range []string{"localhost:8080", "127.0.0.1:8080", "[::1]:8080"} {
+		if !loopbackHost(host) {
+			t.Fatalf("loopbackHost(%q) = false", host)
+		}
+	}
+	for _, host := range []string{"example.com:8080", "192.0.2.10:8080"} {
+		if loopbackHost(host) {
+			t.Fatalf("loopbackHost(%q) = true", host)
+		}
+	}
+}
+
+func TestPublicProfileRedactsCredentials(t *testing.T) {
+	t.Parallel()
+
+	profile := PCEProfile{
+		Name: "prod", APIKey: "key", APISecret: "secret", PCEURL: "https://pce.example.com", OrgID: "1",
+		AnalysisPrimary: "BU", AnalysisSecondary: "app",
+	}
+	public := profile.public()
+	encoded, err := json.Marshal(public)
+	if err != nil {
+		t.Fatalf("marshal public profile: %v", err)
+	}
+	if strings.Contains(string(encoded), profile.APIKey) || strings.Contains(string(encoded), profile.APISecret) {
+		t.Fatal("public profile exposed credentials")
+	}
+	if public.AnalysisPrimary != "BU" || public.AnalysisSecondary != "app" {
+		t.Fatalf("public profile analysis labels = %q/%q", public.AnalysisPrimary, public.AnalysisSecondary)
+	}
+}
+
+func TestResolveAnalysisLabelKeysSupportsCustomTypesCaseInsensitively(t *testing.T) {
+	t.Parallel()
+
+	labels := []illumio.Label{
+		{Key: "app", Value: "Payments"},
+		{Key: "BU", Value: "Finance"},
+		{Key: "bu", Value: "Operations"},
+		{Key: "env", Value: "Prod"},
+	}
+	primary, secondary, err := resolveAnalysisLabelKeys("bu", "APP", labels)
+	if err != nil {
+		t.Fatalf("resolveAnalysisLabelKeys returned error: %v", err)
+	}
+	if primary != "BU" || secondary != "app" {
+		t.Fatalf("resolved keys = %q/%q, want BU/app", primary, secondary)
+	}
+	if got, want := labelTypesFromLabels(labels), []string{"app", "BU", "env"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("labelTypesFromLabels = %#v, want %#v", got, want)
+	}
+}
+
+func TestResolveAnalysisLabelKeysRejectsMissingOrDuplicateTypes(t *testing.T) {
+	t.Parallel()
+
+	labels := []illumio.Label{{Key: "BU"}, {Key: "app"}}
+	if _, _, err := resolveAnalysisLabelKeys("region", "app", labels); err == nil || !strings.Contains(err.Error(), "available label types") {
+		t.Fatalf("missing custom key error = %v", err)
+	}
+	if _, _, err := normalizeAnalysisLabelKeys("BU", "bu"); err == nil {
+		t.Fatal("duplicate label types should be rejected case-insensitively")
+	}
+}
+
+func TestParseCSVAnalyticsRestoresProtectedCellsAndTimestamps(t *testing.T) {
+	t.Parallel()
+
+	csvData := strings.Join([]string{
+		"Source IP,Destination IP,Port,Protocol,Flows,Src Env,Dst Env,Src App,Dst App,First Detected,Last Detected,FQDN",
+		"10.0.0.1,10.0.0.2,443,TCP,7,Prod,Prod,'=cmd(),API,2026-01-31 23:00:00,2026-03-01 01:00:00,api.example.com",
+	}, "\n")
+	summary, insights, err := parseCSVAnalytics(strings.NewReader(csvData))
+	if err != nil {
+		t.Fatalf("parseCSVAnalytics returned error: %v", err)
+	}
+	if len(summary) != 1 || summary[0].FlowCount != 7 || summary[0].Port != 443 {
+		t.Fatalf("summary = %#v", summary)
+	}
+	if len(insights.SourceAppOptions) != 1 || insights.SourceAppOptions[0] != "=cmd()" {
+		t.Fatalf("source app options = %#v, want restored protected value", insights.SourceAppOptions)
+	}
+	if insights.PrimaryLabelKey != "env" || insights.SecondaryLabelKey != "app" {
+		t.Fatalf("default analysis labels = %q/%q", insights.PrimaryLabelKey, insights.SecondaryLabelKey)
+	}
+	activeByMonth := make(map[string]int)
+	for _, row := range insights.MonthlyPortProtocol {
+		activeByMonth[row.Month] = row.ActiveConnections
+	}
+	for _, month := range []string{"2026-01", "2026-02", "2026-03"} {
+		if activeByMonth[month] != 1 {
+			t.Fatalf("active connections for %s = %d, want 1", month, activeByMonth[month])
+		}
+	}
+}
+
+func TestParseCSVAnalyticsWithCustomDimensions(t *testing.T) {
+	t.Parallel()
+
+	csvData := strings.Join([]string{
+		"Source IP,Destination IP,Port,Protocol,Flows,Src BU,Dst BU,Src App,Dst App",
+		"10.0.0.1,10.0.0.2,443,TCP,9,Finance,Operations,Payments,ERP",
+	}, "\n")
+	summary, insights, err := parseCSVAnalyticsWithDimensions(strings.NewReader(csvData), "BU", "app")
+	if err != nil {
+		t.Fatalf("parseCSVAnalyticsWithDimensions returned error: %v", err)
+	}
+	if len(summary) != 1 || summary[0].FlowCount != 9 {
+		t.Fatalf("summary = %#v", summary)
+	}
+	if insights.PrimaryLabelKey != "BU" || insights.SecondaryLabelKey != "app" {
+		t.Fatalf("analysis labels = %q/%q", insights.PrimaryLabelKey, insights.SecondaryLabelKey)
+	}
+	if len(insights.EnvMatrix) != 1 || insights.EnvMatrix[0].Source != "Finance" || insights.EnvMatrix[0].Destination != "Operations" {
+		t.Fatalf("primary matrix = %#v", insights.EnvMatrix)
+	}
+	if len(insights.AppMatrix) != 1 || insights.AppMatrix[0].Source != "Payments" || insights.AppMatrix[0].Destination != "ERP" {
+		t.Fatalf("secondary matrix = %#v", insights.AppMatrix)
+	}
+}
+
+func TestParseCSVAnalyticsDistinguishesMissingCustomLabelFromExternal(t *testing.T) {
+	t.Parallel()
+
+	csvData := strings.Join([]string{
+		"Source IP,Destination IP,Port,Protocol,Flows,Src BU,Dst BU,Src App,Dst App,Src Role,Dst Role",
+		"10.0.0.1,10.0.0.2,443,TCP,3,,,Payments,ERP,Web,Database",
+	}, "\n")
+	_, insights, err := parseCSVAnalyticsWithDimensions(strings.NewReader(csvData), "BU", "app")
+	if err != nil {
+		t.Fatalf("parseCSVAnalyticsWithDimensions returned error: %v", err)
+	}
+	if len(insights.EnvMatrix) != 1 || insights.EnvMatrix[0].Source != "No BU Label" || insights.EnvMatrix[0].Destination != "No BU Label" {
+		t.Fatalf("custom-label matrix = %#v", insights.EnvMatrix)
+	}
+	if len(insights.TrafficCategories) != 1 || insights.TrafficCategories[0].Name != "Internal -> Internal" {
+		t.Fatalf("traffic categories = %#v", insights.TrafficCategories)
+	}
+}
+
+func TestResolveConfigCredentialsUsesServerSideProfile(t *testing.T) {
+	state.Mu.Lock()
+	previousProfiles := state.Profiles
+	state.Profiles = map[string]PCEProfile{
+		"prod": {PCEURL: "https://pce.example.com", OrgID: "7", APIKey: "stored-key", APISecret: "stored-secret"},
+	}
+	state.Mu.Unlock()
+	t.Cleanup(func() {
+		state.Mu.Lock()
+		state.Profiles = previousProfiles
+		state.Mu.Unlock()
+	})
+
+	cfg, err := resolveConfigCredentials(Config{ProfileName: "prod", PCEURL: "https://evil.example", OrgID: "9"})
+	if err != nil {
+		t.Fatalf("resolveConfigCredentials returned error: %v", err)
+	}
+	if cfg.PCEURL != "https://pce.example.com" || cfg.OrgID != "7" || cfg.APIKey != "stored-key" || cfg.APISecret != "stored-secret" {
+		t.Fatalf("resolved config = %#v", cfg)
+	}
+}
+
+func TestServeEmbeddedHTMLAddsMatchingCSPNonce(t *testing.T) {
+	t.Parallel()
+
+	recorder := httptest.NewRecorder()
+	serveEmbeddedHTML(recorder, "frontend/index.html")
+	response := recorder.Result()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("serveEmbeddedHTML status = %d", response.StatusCode)
+	}
+	policy := response.Header.Get("Content-Security-Policy")
+	marker := "'nonce-"
+	start := strings.Index(policy, marker)
+	if start < 0 {
+		t.Fatalf("CSP does not contain a nonce: %q", policy)
+	}
+	start += len(marker)
+	end := strings.Index(policy[start:], "'")
+	if end < 0 {
+		t.Fatalf("CSP nonce is malformed: %q", policy)
+	}
+	nonce := policy[start : start+end]
+	if !strings.Contains(recorder.Body.String(), `<script nonce="`+nonce+`">`) {
+		t.Fatal("HTML script nonce does not match the CSP nonce")
+	}
+	if strings.Contains(policy, "script-src 'self' 'unsafe-inline'") {
+		t.Fatal("script CSP should not allow unsafe-inline")
+	}
+}
+
+func TestSecurityHeadersRejectsNonLoopbackHost(t *testing.T) {
+	t.Parallel()
+
+	handler := securityHeaders(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	request.Host = "example.com"
+	handler.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("non-loopback request status = %d, want 403", recorder.Code)
 	}
 }

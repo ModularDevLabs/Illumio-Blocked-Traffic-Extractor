@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"embed"
+	"encoding/base64"
 	"encoding/csv"
 	"encoding/json"
 	"errors"
@@ -26,26 +28,68 @@ import (
 	"github.com/pkg/browser"
 )
 
-//go:embed frontend/*.html
+//go:embed frontend/*.html frontend/tailwind.css
 var staticFiles embed.FS
 
 type PCEProfile struct {
-	Name       string `json:"name"`
-	PCEURL     string `json:"pce_url"`
-	OrgID      string `json:"org_id"`
-	APIKey     string `json:"api_key"`
-	APISecret  string `json:"api_secret"`
-	SrcLabels  string `json:"src_labels"`
-	DstLabels  string `json:"dst_labels"`
-	ExcludeSrc string `json:"exclude_src"`
-	ExcludeDst string `json:"exclude_dst"`
-	Services   string `json:"services"`
-	SavePath   string `json:"save_path"`
-	FileName   string `json:"file_name"`
-	Days       int    `json:"days"`
-	StartDate  string `json:"start_date"`
-	EndDate    string `json:"end_date"`
-	ChunkIntvl string `json:"chunk_interval"`
+	Name              string `json:"name"`
+	PCEURL            string `json:"pce_url"`
+	OrgID             string `json:"org_id"`
+	APIKey            string `json:"api_key"`
+	APISecret         string `json:"api_secret"`
+	SrcLabels         string `json:"src_labels"`
+	DstLabels         string `json:"dst_labels"`
+	ExcludeSrc        string `json:"exclude_src"`
+	ExcludeDst        string `json:"exclude_dst"`
+	Services          string `json:"services"`
+	SavePath          string `json:"save_path"`
+	FileName          string `json:"file_name"`
+	Days              int    `json:"days"`
+	StartDate         string `json:"start_date"`
+	EndDate           string `json:"end_date"`
+	ChunkIntvl        string `json:"chunk_interval"`
+	AnalysisPrimary   string `json:"analysis_primary_label"`
+	AnalysisSecondary string `json:"analysis_secondary_label"`
+}
+
+type PublicPCEProfile struct {
+	Name              string `json:"name"`
+	PCEURL            string `json:"pce_url"`
+	OrgID             string `json:"org_id"`
+	SrcLabels         string `json:"src_labels"`
+	DstLabels         string `json:"dst_labels"`
+	ExcludeSrc        string `json:"exclude_src"`
+	ExcludeDst        string `json:"exclude_dst"`
+	Services          string `json:"services"`
+	SavePath          string `json:"save_path"`
+	FileName          string `json:"file_name"`
+	Days              int    `json:"days"`
+	StartDate         string `json:"start_date"`
+	EndDate           string `json:"end_date"`
+	ChunkIntvl        string `json:"chunk_interval"`
+	AnalysisPrimary   string `json:"analysis_primary_label"`
+	AnalysisSecondary string `json:"analysis_secondary_label"`
+}
+
+func (profile PCEProfile) public() PublicPCEProfile {
+	return PublicPCEProfile{
+		Name:              profile.Name,
+		PCEURL:            profile.PCEURL,
+		OrgID:             profile.OrgID,
+		SrcLabels:         profile.SrcLabels,
+		DstLabels:         profile.DstLabels,
+		ExcludeSrc:        profile.ExcludeSrc,
+		ExcludeDst:        profile.ExcludeDst,
+		Services:          profile.Services,
+		SavePath:          profile.SavePath,
+		FileName:          profile.FileName,
+		Days:              profile.Days,
+		StartDate:         profile.StartDate,
+		EndDate:           profile.EndDate,
+		ChunkIntvl:        profile.ChunkIntvl,
+		AnalysisPrimary:   profile.AnalysisPrimary,
+		AnalysisSecondary: profile.AnalysisSecondary,
+	}
 }
 
 type AppState struct {
@@ -134,6 +178,8 @@ type MonthlyPortProtocolSummary struct {
 }
 
 type AnalyticsInsights struct {
+	PrimaryLabelKey       string                        `json:"primary_label_key"`
+	SecondaryLabelKey     string                        `json:"secondary_label_key"`
 	EnvMatrix             []MatrixSummary               `json:"env_matrix"`
 	AppMatrix             []MatrixSummary               `json:"app_matrix"`
 	TopSourceEnvs         []TalkerSummary               `json:"top_source_envs"`
@@ -183,6 +229,16 @@ var state = &AppState{
 	Logs:     []string{},
 	Profiles: make(map[string]PCEProfile),
 }
+
+const (
+	appConfigDirName    = "illumio-blocked-traffic-extractor"
+	maxJSONRequestSize  = 1 << 20
+	maxCSVUploadSize    = 64 << 20
+	maxExtractionTime   = 24 * time.Hour
+	maxChunkQueryTime   = 30 * time.Minute
+	maxChunkAttempts    = 3
+	maxExtractionChunks = 200000
+)
 
 func addLog(msg string) {
 	log.Println(msg)
@@ -343,11 +399,13 @@ func fetchDiscoveryData(ctx context.Context, client *illumio.Client, logPrefix s
 		}()
 	}
 
+queueTasks:
 	for _, task := range tasks {
-		if ctx.Err() != nil {
-			break
+		select {
+		case jobs <- task:
+		case <-ctx.Done():
+			break queueTasks
 		}
-		jobs <- task
 	}
 	close(jobs)
 	wg.Wait()
@@ -359,28 +417,131 @@ func fetchDiscoveryData(ctx context.Context, client *illumio.Client, logPrefix s
 	return results, nil
 }
 
-func getConfigPath() string {
-	ex, _ := os.Executable()
-	return filepath.Join(filepath.Dir(ex), "pce_profiles.json")
+func getConfigPath() (string, error) {
+	configRoot, err := os.UserConfigDir()
+	if err != nil {
+		return "", fmt.Errorf("locate user config directory: %w", err)
+	}
+	return filepath.Join(configRoot, appConfigDirName, "pce_profiles.json"), nil
 }
 
 func loadProfiles() {
-	path := getConfigPath()
+	path, err := getConfigPath()
+	if err != nil {
+		log.Printf("failed to locate profile store: %v", err)
+		return
+	}
 	data, err := os.ReadFile(path)
-	if err == nil {
-		state.Mu.Lock()
-		json.Unmarshal(data, &state.Profiles)
-		state.Mu.Unlock()
+	legacyPath := ""
+	if errors.Is(err, os.ErrNotExist) {
+		if executable, executableErr := os.Executable(); executableErr == nil {
+			candidatePath := filepath.Join(filepath.Dir(executable), "pce_profiles.json")
+			if legacyData, legacyErr := os.ReadFile(candidatePath); legacyErr == nil {
+				data = legacyData
+				err = nil
+				legacyPath = candidatePath
+				log.Printf("migrating profiles from legacy path %s to %s", candidatePath, path)
+			}
+		}
+		if errors.Is(err, os.ErrNotExist) {
+			return
+		}
+	}
+	if err != nil {
+		log.Printf("failed to read profile store: %v", err)
+		return
+	}
+
+	profiles := make(map[string]PCEProfile)
+	if err := json.Unmarshal(data, &profiles); err != nil {
+		log.Printf("failed to parse profile store: %v", err)
+		return
+	}
+	state.Mu.Lock()
+	state.Profiles = profiles
+	state.Mu.Unlock()
+	if _, statErr := os.Stat(path); errors.Is(statErr, os.ErrNotExist) {
+		if err := saveProfiles(); err != nil {
+			log.Printf("failed to migrate profile store: %v", err)
+		} else if legacyPath != "" {
+			if err := os.Remove(legacyPath); err != nil {
+				log.Printf("profiles migrated, but the legacy profile file could not be removed: %v", err)
+			} else {
+				log.Printf("profiles migrated and legacy profile file removed")
+			}
+		}
 	}
 }
 
-func saveProfiles() {
-	state.Mu.Lock()
-	data, _ := json.MarshalIndent(state.Profiles, "", "  ")
-	state.Mu.Unlock()
-	if err := os.WriteFile(getConfigPath(), data, 0600); err != nil {
-		log.Printf("failed to write profile store: %v", err)
+func saveProfiles() error {
+	path, err := getConfigPath()
+	if err != nil {
+		return err
 	}
+	state.Mu.Lock()
+	data, err := json.MarshalIndent(state.Profiles, "", "  ")
+	state.Mu.Unlock()
+	if err != nil {
+		return fmt.Errorf("encode profile store: %w", err)
+	}
+
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return fmt.Errorf("create profile directory: %w", err)
+	}
+	if err := os.Chmod(dir, 0700); err != nil {
+		return fmt.Errorf("secure profile directory: %w", err)
+	}
+
+	tmp, err := os.CreateTemp(dir, ".pce_profiles-*.tmp")
+	if err != nil {
+		return fmt.Errorf("create temporary profile store: %w", err)
+	}
+	tmpPath := tmp.Name()
+	committed := false
+	defer func() {
+		_ = tmp.Close()
+		if !committed {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+	if err := tmp.Chmod(0600); err != nil {
+		return fmt.Errorf("secure temporary profile store: %w", err)
+	}
+	if _, err := tmp.Write(data); err != nil {
+		return fmt.Errorf("write temporary profile store: %w", err)
+	}
+	if err := tmp.Sync(); err != nil {
+		return fmt.Errorf("sync temporary profile store: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close temporary profile store: %w", err)
+	}
+	if err := replaceFile(tmpPath, path); err != nil {
+		return fmt.Errorf("replace profile store: %w", err)
+	}
+	if err := os.Chmod(path, 0600); err != nil {
+		return fmt.Errorf("secure profile store: %w", err)
+	}
+	committed = true
+	return nil
+}
+
+func decodeJSONBody(w http.ResponseWriter, r *http.Request, target interface{}) error {
+	r.Body = http.MaxBytesReader(w, r.Body, maxJSONRequestSize)
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil {
+		return err
+	}
+	var extra interface{}
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return fmt.Errorf("request body must contain one JSON object")
+		}
+		return err
+	}
+	return nil
 }
 
 func writeJSONError(w http.ResponseWriter, status int, message string) {
@@ -403,11 +564,13 @@ func requireMethod(w http.ResponseWriter, r *http.Request, method string) bool {
 
 func sameOriginRequest(r *http.Request) bool {
 	candidates := []string{r.Header.Get("Origin"), r.Header.Get("Referer")}
+	found := false
 	for _, raw := range candidates {
 		raw = strings.TrimSpace(raw)
 		if raw == "" {
 			continue
 		}
+		found = true
 		parsed, err := url.Parse(raw)
 		if err != nil {
 			return false
@@ -416,7 +579,7 @@ func sameOriginRequest(r *http.Request) bool {
 			return false
 		}
 	}
-	return true
+	return found
 }
 
 func requireSameOrigin(w http.ResponseWriter, r *http.Request) bool {
@@ -450,85 +613,147 @@ func boolEnvOrDefault(key string, fallback bool) bool {
 	}
 }
 
+func loopbackHost(hostport string) bool {
+	host := hostport
+	if parsedHost, _, err := net.SplitHostPort(hostport); err == nil {
+		host = parsedHost
+	}
+	host = strings.Trim(strings.TrimSpace(host), "[]")
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !loopbackHost(r.Host) {
+			http.Error(w, "loopback host required", http.StatusForbidden)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		}
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		next.ServeHTTP(w, r)
+	})
+}
+
+func serveEmbeddedHTML(w http.ResponseWriter, fileName string) {
+	data, err := staticFiles.ReadFile(fileName)
+	if err != nil {
+		http.Error(w, "page unavailable", http.StatusInternalServerError)
+		return
+	}
+	nonceBytes := make([]byte, 18)
+	if _, err := rand.Read(nonceBytes); err != nil {
+		http.Error(w, "failed to prepare page security policy", http.StatusInternalServerError)
+		return
+	}
+	nonce := base64.RawURLEncoding.EncodeToString(nonceBytes)
+	data = []byte(strings.Replace(string(data), "<script>", `<script nonce="`+nonce+`">`, 1))
+	w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'nonce-"+nonce+"'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(data)
+}
+
 func main() {
 	loadProfiles()
 
-	defaultHost := envOrDefault("ITT_HOST", "127.0.0.1")
 	defaultPort := envOrDefault("ITT_PORT", "8080")
 	defaultOpenBrowser := boolEnvOrDefault("ITT_OPEN_BROWSER", true)
 
-	host := flag.String("host", defaultHost, "Host or interface to bind the web server to")
 	port := flag.String("port", defaultPort, "Port to bind the web server to")
 	openBrowser := flag.Bool("open-browser", defaultOpenBrowser, "Automatically open the local web UI in a browser")
 	flag.Parse()
+	validatedPort, err := validatePort(*port)
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/assets/tailwind.css", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		data, _ := staticFiles.ReadFile("frontend/index.html")
-		w.Header().Set("Content-Type", "text/html")
-		w.Write(data)
+		data, err := staticFiles.ReadFile("frontend/tailwind.css")
+		if err != nil {
+			http.Error(w, "asset unavailable", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "text/css; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-cache")
+		_, _ = w.Write(data)
 	})
-	http.HandleFunc("/summary", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/" {
+			http.NotFound(w, r)
+			return
+		}
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		data, _ := staticFiles.ReadFile("frontend/summary.html")
-		w.Header().Set("Content-Type", "text/html")
-		w.Write(data)
+		serveEmbeddedHTML(w, "frontend/index.html")
 	})
-	http.HandleFunc("/executive-summary", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/summary", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		data, _ := staticFiles.ReadFile("frontend/executive-summary.html")
-		w.Header().Set("Content-Type", "text/html")
-		w.Write(data)
+		serveEmbeddedHTML(w, "frontend/summary.html")
 	})
-	http.HandleFunc("/heatmaps", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/executive-summary", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		data, _ := staticFiles.ReadFile("frontend/heatmaps.html")
-		w.Header().Set("Content-Type", "text/html")
-		w.Write(data)
+		serveEmbeddedHTML(w, "frontend/executive-summary.html")
+	})
+	mux.HandleFunc("/heatmaps", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		serveEmbeddedHTML(w, "frontend/heatmaps.html")
 	})
 
-	http.HandleFunc("/api/test", handleTest)
-	http.HandleFunc("/api/traffic-db-metrics", handleTrafficDBMetrics)
-	http.HandleFunc("/api/discovery", handleDiscovery)
-	http.HandleFunc("/api/start", handleStart)
-	http.HandleFunc("/api/cancel", handleCancel)
-	http.HandleFunc("/api/status", handleStatus)
-	http.HandleFunc("/api/results/summary", handleSummary)
-	http.HandleFunc("/api/results/import-csv", handleImportCSV)
+	mux.HandleFunc("/api/test", handleTest)
+	mux.HandleFunc("/api/traffic-db-metrics", handleTrafficDBMetrics)
+	mux.HandleFunc("/api/discovery", handleDiscovery)
+	mux.HandleFunc("/api/start", handleStart)
+	mux.HandleFunc("/api/cancel", handleCancel)
+	mux.HandleFunc("/api/status", handleStatus)
+	mux.HandleFunc("/api/results/summary", handleSummary)
+	mux.HandleFunc("/api/results/import-csv", handleImportCSV)
 
-	http.HandleFunc("/api/profiles/get", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/profiles/get", func(w http.ResponseWriter, r *http.Request) {
 		if !requireMethod(w, r, http.MethodGet) {
 			return
 		}
 		state.Mu.Lock()
-		json.NewEncoder(w).Encode(state.Profiles)
+		profiles := make(map[string]PublicPCEProfile, len(state.Profiles))
+		for name, profile := range state.Profiles {
+			profiles[name] = profile.public()
+		}
 		state.Mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(profiles)
 	})
-	http.HandleFunc("/api/profiles/save", handleSaveProfile)
-	http.HandleFunc("/api/profiles/delete", handleDeleteProfile)
+	mux.HandleFunc("/api/profiles/save", handleSaveProfile)
+	mux.HandleFunc("/api/profiles/delete", handleDeleteProfile)
 
-	listenAddr := fmt.Sprintf("%s:%s", *host, *port)
-	localURL := fmt.Sprintf("http://localhost:%s", *port)
+	listenAddr := net.JoinHostPort("127.0.0.1", validatedPort)
+	localURL := fmt.Sprintf("http://localhost:%s", validatedPort)
 
 	fmt.Printf("Starting Illumio Traffic Tool on %s\n", listenAddr)
 	fmt.Printf("Local access URL: %s\n", localURL)
-	if *host == "0.0.0.0" || *host == "::" {
-		fmt.Printf("Remote access URL: http://<server-ip-or-dns>:%s\n", *port)
-	} else if *host != "127.0.0.1" && *host != "localhost" {
-		fmt.Printf("Configured access URL: http://%s:%s\n", *host, *port)
-	}
 	if *openBrowser {
 		go func() {
 			time.Sleep(1 * time.Second)
@@ -536,7 +761,15 @@ func main() {
 		}()
 	}
 
-	log.Fatal(http.ListenAndServe(listenAddr, nil))
+	server := &http.Server{
+		Addr:              listenAddr,
+		Handler:           securityHeaders(mux),
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      20 * time.Minute,
+		IdleTimeout:       60 * time.Second,
+	}
+	log.Fatal(server.ListenAndServe())
 }
 
 func handleDiscovery(w http.ResponseWriter, r *http.Request) {
@@ -544,7 +777,13 @@ func handleDiscovery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var cfg Config
-	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
+	if err := decodeJSONBody(w, r, &cfg); err != nil {
+		writeJSONError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	var err error
+	cfg, err = resolveConfigCredentials(cfg)
+	if err != nil {
 		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -578,6 +817,7 @@ func handleDiscovery(w http.ResponseWriter, r *http.Request) {
 	for _, item := range discoveryData.Labels {
 		labelNames = append(labelNames, item.Value)
 	}
+	labelTypes := labelTypesFromLabels(discoveryData.Labels)
 	serviceNames := make([]string, 0, len(discoveryData.Services))
 	for _, item := range discoveryData.Services {
 		serviceNames = append(serviceNames, item.Name)
@@ -611,6 +851,7 @@ func handleDiscovery(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success":         true,
 		"labels":          labelNames,
+		"labelTypes":      labelTypes,
 		"services":        serviceNames,
 		"ipLists":         ipListNames,
 		"labelGroups":     lgNames,
@@ -643,18 +884,65 @@ func handleSaveProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var prof PCEProfile
-	if err := json.NewDecoder(r.Body).Decode(&prof); err != nil {
+	if err := decodeJSONBody(w, r, &prof); err != nil {
 		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	prof.Name = strings.TrimSpace(prof.Name)
 	if prof.Name == "" {
 		writeJSONError(w, http.StatusBadRequest, "profile name required")
+		return
+	}
+	if len(prof.Name) > 100 {
+		writeJSONError(w, http.StatusBadRequest, "profile name must be 100 characters or fewer")
+		return
+	}
+	normalizedURL, err := validatePCEURL(prof.PCEURL)
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	prof.PCEURL = normalizedURL
+	prof.OrgID, err = validateOrgID(prof.OrgID)
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	prof.AnalysisPrimary, prof.AnalysisSecondary, err = normalizeAnalysisLabelKeys(prof.AnalysisPrimary, prof.AnalysisSecondary)
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	state.Mu.Lock()
+	previous, existed := state.Profiles[prof.Name]
+	state.Mu.Unlock()
+	if existed {
+		if strings.TrimSpace(prof.APIKey) == "" {
+			prof.APIKey = previous.APIKey
+		}
+		if prof.APISecret == "" {
+			prof.APISecret = previous.APISecret
+		}
+	}
+	prof.APIKey = strings.TrimSpace(prof.APIKey)
+	if strings.TrimSpace(prof.OrgID) == "" || strings.TrimSpace(prof.APIKey) == "" || prof.APISecret == "" {
+		writeJSONError(w, http.StatusBadRequest, "PCE URL, Org ID, API Key, and API Secret are required")
 		return
 	}
 	state.Mu.Lock()
 	state.Profiles[prof.Name] = prof
 	state.Mu.Unlock()
-	saveProfiles()
+	if err := saveProfiles(); err != nil {
+		state.Mu.Lock()
+		if existed {
+			state.Profiles[prof.Name] = previous
+		} else {
+			delete(state.Profiles, prof.Name)
+		}
+		state.Mu.Unlock()
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
 }
 
@@ -665,33 +953,194 @@ func handleDeleteProfile(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name string `json:"name"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(w, r, &req); err != nil {
 		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	req.Name = strings.TrimSpace(req.Name)
 	state.Mu.Lock()
+	previous, existed := state.Profiles[req.Name]
 	delete(state.Profiles, req.Name)
 	state.Mu.Unlock()
-	saveProfiles()
+	if !existed {
+		writeJSONError(w, http.StatusNotFound, "profile not found")
+		return
+	}
+	if err := saveProfiles(); err != nil {
+		state.Mu.Lock()
+		state.Profiles[req.Name] = previous
+		state.Mu.Unlock()
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
 }
 
 type Config struct {
-	PCEURL     string `json:"pce_url"`
-	OrgID      string `json:"org_id"`
-	APIKey     string `json:"api_key"`
-	APISecret  string `json:"api_secret"`
-	SrcLabels  string `json:"src_labels"`
-	DstLabels  string `json:"dst_labels"`
-	ExcludeSrc string `json:"exclude_src"`
-	ExcludeDst string `json:"exclude_dst"`
-	Services   string `json:"services"`
-	SavePath   string `json:"save_path"`
-	FileName   string `json:"file_name"`
-	Days       int    `json:"days"`
-	StartDate  string `json:"start_date"`
-	EndDate    string `json:"end_date"`
-	ChunkIntvl string `json:"chunk_interval"`
+	ProfileName       string `json:"profile_name"`
+	PCEURL            string `json:"pce_url"`
+	OrgID             string `json:"org_id"`
+	APIKey            string `json:"api_key"`
+	APISecret         string `json:"api_secret"`
+	SrcLabels         string `json:"src_labels"`
+	DstLabels         string `json:"dst_labels"`
+	ExcludeSrc        string `json:"exclude_src"`
+	ExcludeDst        string `json:"exclude_dst"`
+	Services          string `json:"services"`
+	SavePath          string `json:"save_path"`
+	FileName          string `json:"file_name"`
+	Days              int    `json:"days"`
+	StartDate         string `json:"start_date"`
+	EndDate           string `json:"end_date"`
+	ChunkIntvl        string `json:"chunk_interval"`
+	AnalysisPrimary   string `json:"analysis_primary_label"`
+	AnalysisSecondary string `json:"analysis_secondary_label"`
+}
+
+func normalizeAnalysisLabelKeys(primary, secondary string) (string, string, error) {
+	primary = strings.TrimSpace(primary)
+	secondary = strings.TrimSpace(secondary)
+	if primary == "" {
+		primary = "env"
+	}
+	if secondary == "" {
+		secondary = "app"
+	}
+	if len(primary) > 100 || len(secondary) > 100 || strings.ContainsAny(primary+secondary, "\r\n") {
+		return "", "", fmt.Errorf("analysis label types must be single-line values of 100 characters or fewer")
+	}
+	if strings.EqualFold(primary, secondary) {
+		return "", "", fmt.Errorf("primary and secondary analysis label types must be different")
+	}
+	return primary, secondary, nil
+}
+
+func labelTypesFromLabels(labels []illumio.Label) []string {
+	byLowerKey := make(map[string]string)
+	for _, label := range labels {
+		key := strings.TrimSpace(label.Key)
+		if key == "" {
+			continue
+		}
+		lowerKey := strings.ToLower(key)
+		if _, exists := byLowerKey[lowerKey]; !exists {
+			byLowerKey[lowerKey] = key
+		}
+	}
+
+	keys := make([]string, 0, len(byLowerKey))
+	for _, key := range byLowerKey {
+		keys = append(keys, key)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		return strings.ToLower(keys[i]) < strings.ToLower(keys[j])
+	})
+	return keys
+}
+
+func resolveAnalysisLabelKeys(primary, secondary string, labels []illumio.Label) (string, string, error) {
+	primary, secondary, err := normalizeAnalysisLabelKeys(primary, secondary)
+	if err != nil {
+		return "", "", err
+	}
+
+	available := make(map[string]string)
+	for _, key := range labelTypesFromLabels(labels) {
+		available[strings.ToLower(key)] = key
+	}
+	resolvedPrimary, primaryOK := available[strings.ToLower(primary)]
+	resolvedSecondary, secondaryOK := available[strings.ToLower(secondary)]
+	if !primaryOK || !secondaryOK {
+		availableKeys := labelTypesFromLabels(labels)
+		availableText := strings.Join(availableKeys, ", ")
+		if availableText == "" {
+			availableText = "none"
+		}
+		missing := primary
+		if primaryOK {
+			missing = secondary
+		}
+		return "", "", fmt.Errorf("analysis label type %q was not found; available label types: %s", missing, availableText)
+	}
+	return resolvedPrimary, resolvedSecondary, nil
+}
+
+func validatePCEURL(raw string) (string, error) {
+	value := strings.TrimSpace(raw)
+	parsed, err := url.Parse(value)
+	if err != nil {
+		return "", fmt.Errorf("invalid PCE URL: %w", err)
+	}
+	if parsed.Scheme != "https" && parsed.Scheme != "http" {
+		return "", fmt.Errorf("PCE URL must use http or https")
+	}
+	if parsed.Host == "" || parsed.User != nil {
+		return "", fmt.Errorf("PCE URL must contain a host and must not contain user credentials")
+	}
+	if parsed.RawQuery != "" || parsed.Fragment != "" || (parsed.Path != "" && parsed.Path != "/") {
+		return "", fmt.Errorf("PCE URL must be an origin only, without a path, query, or fragment")
+	}
+	parsed.Path = ""
+	return strings.TrimSuffix(parsed.String(), "/"), nil
+}
+
+func validateOrgID(raw string) (string, error) {
+	value := strings.TrimSpace(raw)
+	orgID, err := strconv.ParseUint(value, 10, 64)
+	if err != nil || orgID == 0 {
+		return "", fmt.Errorf("Org ID must be a positive integer")
+	}
+	return value, nil
+}
+
+func validatePort(raw string) (string, error) {
+	value := strings.TrimSpace(raw)
+	port, err := strconv.Atoi(value)
+	if err != nil || port < 1 || port > 65535 {
+		return "", fmt.Errorf("port must be an integer from 1 through 65535")
+	}
+	return value, nil
+}
+
+func resolveConfigCredentials(cfg Config) (Config, error) {
+	profileName := strings.TrimSpace(cfg.ProfileName)
+	if profileName != "" {
+		state.Mu.Lock()
+		profile, ok := state.Profiles[profileName]
+		state.Mu.Unlock()
+		if !ok {
+			return Config{}, fmt.Errorf("saved profile %q was not found", profileName)
+		}
+		cfg.PCEURL = profile.PCEURL
+		cfg.OrgID = profile.OrgID
+		cfg.APIKey = profile.APIKey
+		cfg.APISecret = profile.APISecret
+		if strings.TrimSpace(cfg.AnalysisPrimary) == "" {
+			cfg.AnalysisPrimary = profile.AnalysisPrimary
+		}
+		if strings.TrimSpace(cfg.AnalysisSecondary) == "" {
+			cfg.AnalysisSecondary = profile.AnalysisSecondary
+		}
+	}
+
+	normalizedURL, err := validatePCEURL(cfg.PCEURL)
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.PCEURL = normalizedURL
+	cfg.OrgID, err = validateOrgID(cfg.OrgID)
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.APIKey = strings.TrimSpace(cfg.APIKey)
+	if cfg.OrgID == "" || cfg.APIKey == "" || cfg.APISecret == "" {
+		return Config{}, fmt.Errorf("PCE URL, Org ID, API Key, and API Secret are required")
+	}
+	cfg.AnalysisPrimary, cfg.AnalysisSecondary, err = normalizeAnalysisLabelKeys(cfg.AnalysisPrimary, cfg.AnalysisSecondary)
+	if err != nil {
+		return Config{}, err
+	}
+	return cfg, nil
 }
 
 type extractionChunk struct {
@@ -704,7 +1153,13 @@ func handleTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var cfg Config
-	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
+	if err := decodeJSONBody(w, r, &cfg); err != nil {
+		writeJSONError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	var err error
+	cfg, err = resolveConfigCredentials(cfg)
+	if err != nil {
 		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -712,7 +1167,7 @@ func handleTest(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	client := illumio.NewClient(cfg.PCEURL, cfg.OrgID, cfg.APIKey, cfg.APISecret)
-	err := client.TestConnection(ctx)
+	err = client.TestConnection(ctx)
 	if err != nil {
 		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
 		return
@@ -725,7 +1180,13 @@ func handleTrafficDBMetrics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var cfg Config
-	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
+	if err := decodeJSONBody(w, r, &cfg); err != nil {
+		writeJSONError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	var err error
+	cfg, err = resolveConfigCredentials(cfg)
+	if err != nil {
 		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -750,8 +1211,6 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	state.Mu.Lock()
-	defer state.Mu.Unlock()
-
 	response := map[string]interface{}{
 		"completedChunks":  state.CompletedChunks,
 		"requestedDays":    state.RequestedDays,
@@ -767,7 +1226,8 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 		"discoveryActive":  state.DiscoveryActive,
 	}
 	state.Logs = []string{}
-	json.NewEncoder(w).Encode(response)
+	state.Mu.Unlock()
+	_ = json.NewEncoder(w).Encode(response)
 }
 
 func handleSummary(w http.ResponseWriter, r *http.Request) {
@@ -779,13 +1239,16 @@ func handleSummary(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Expires", "0")
 
 	state.Mu.Lock()
-	defer state.Mu.Unlock()
+	fileName := state.FileName
+	summary := state.LastSummary
+	insights := state.LastInsights
+	state.Mu.Unlock()
 
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success":  state.FileName != "" && len(state.LastSummary) > 0,
-		"fileName": state.FileName,
-		"summary":  state.LastSummary,
-		"insights": state.LastInsights,
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":  fileName != "" && len(summary) > 0,
+		"fileName": fileName,
+		"summary":  summary,
+		"insights": insights,
 	})
 }
 
@@ -904,6 +1367,31 @@ func parseDateInput(raw string) (time.Time, error) {
 	return time.Parse("2006-01-02", value)
 }
 
+func inclusiveCalendarDays(start, end time.Time) int {
+	if end.Before(start) {
+		start, end = end, start
+	}
+	if start.Year() == end.Year() {
+		return end.YearDay() - start.YearDay() + 1
+	}
+	days := 0
+	for year := start.Year(); year <= end.Year(); year++ {
+		firstDay := 1
+		lastDay := 365
+		if time.Date(year, time.December, 31, 0, 0, 0, 0, time.UTC).YearDay() == 366 {
+			lastDay = 366
+		}
+		if year == start.Year() {
+			firstDay = start.YearDay()
+		}
+		if year == end.Year() {
+			lastDay = end.YearDay()
+		}
+		days += lastDay - firstDay + 1
+	}
+	return days
+}
+
 func extractionDateRange(cfg Config, now time.Time) (time.Time, time.Time, int, error) {
 	start, err := parseDateInput(cfg.StartDate)
 	if err != nil {
@@ -923,13 +1411,16 @@ func extractionDateRange(cfg Config, now time.Time) (time.Time, time.Time, int, 
 		if end.Before(start) {
 			return time.Time{}, time.Time{}, 0, fmt.Errorf("end date must be on or after start date")
 		}
-		days := int(end.Sub(start).Hours()/24) + 1
+		days := inclusiveCalendarDays(start, end)
 		return start, end, days, nil
 	}
 
 	days := cfg.Days
 	if days <= 0 {
 		days = 90
+	}
+	if days > maxExtractionChunks {
+		return time.Time{}, time.Time{}, 0, fmt.Errorf("days to fetch must be %d or fewer", maxExtractionChunks)
 	}
 	end = now.UTC().AddDate(0, 0, -1)
 	start = end.AddDate(0, 0, -(days - 1))
@@ -1024,6 +1515,14 @@ func monthlyPortProtocolFromRecords(records []AnalyticsRecord) []MonthlyPortProt
 }
 
 func parseCSVAnalytics(reader io.Reader) ([]PortProtocolSummary, AnalyticsInsights, error) {
+	return parseCSVAnalyticsWithDimensions(reader, "env", "app")
+}
+
+func parseCSVAnalyticsWithDimensions(reader io.Reader, primaryLabelKey, secondaryLabelKey string) ([]PortProtocolSummary, AnalyticsInsights, error) {
+	primaryLabelKey, secondaryLabelKey, err := normalizeAnalysisLabelKeys(primaryLabelKey, secondaryLabelKey)
+	if err != nil {
+		return nil, AnalyticsInsights{}, err
+	}
 	csvReader := csv.NewReader(reader)
 	rows, err := csvReader.ReadAll()
 	if err != nil {
@@ -1034,65 +1533,123 @@ func parseCSVAnalytics(reader io.Reader) ([]PortProtocolSummary, AnalyticsInsigh
 	}
 
 	headerIndex := make(map[string]int)
+	sourceLabelHeaders := []string{}
+	destinationLabelHeaders := []string{}
 	for i, header := range rows[0] {
-		headerIndex[strings.TrimSpace(header)] = i
+		normalizedHeader := strings.TrimSpace(header)
+		headerIndex[strings.ToLower(normalizedHeader)] = i
+		if strings.HasPrefix(strings.ToLower(normalizedHeader), "src ") {
+			sourceLabelHeaders = append(sourceLabelHeaders, normalizedHeader)
+		}
+		if strings.HasPrefix(strings.ToLower(normalizedHeader), "dst ") {
+			destinationLabelHeaders = append(destinationLabelHeaders, normalizedHeader)
+		}
 	}
 
-	requiredHeaders := []string{"Source IP", "Destination IP", "Port", "Protocol", "Flows"}
+	primarySourceHeader := "Src " + primaryLabelKey
+	primaryDestinationHeader := "Dst " + primaryLabelKey
+	secondarySourceHeader := "Src " + secondaryLabelKey
+	secondaryDestinationHeader := "Dst " + secondaryLabelKey
+	requiredHeaders := []string{
+		"Source IP", "Destination IP", "Port", "Protocol", "Flows",
+		primarySourceHeader, primaryDestinationHeader,
+		secondarySourceHeader, secondaryDestinationHeader,
+	}
 	for _, header := range requiredHeaders {
-		if _, ok := headerIndex[header]; !ok {
+		if _, ok := headerIndex[strings.ToLower(header)]; !ok {
 			return nil, AnalyticsInsights{}, fmt.Errorf("CSV is missing required header: %s", header)
 		}
 	}
 
 	getValue := func(row []string, header string) string {
-		index, ok := headerIndex[header]
+		index, ok := headerIndex[strings.ToLower(strings.TrimSpace(header))]
 		if !ok || index >= len(row) {
 			return ""
 		}
-		return strings.TrimSpace(row[index])
+		return normalizeImportedCSVCell(row[index])
 	}
 
 	summary := []PortProtocolSummary{}
 	records := []AnalyticsRecord{}
-	for _, row := range rows[1:] {
+	for rowIndex, row := range rows[1:] {
 		if len(row) == 0 {
 			continue
 		}
 
-		flowCount := 0
-		fmt.Sscanf(getValue(row, "Flows"), "%d", &flowCount)
-		port := 0
-		fmt.Sscanf(getValue(row, "Port"), "%d", &port)
+		flowCount, err := strconv.Atoi(getValue(row, "Flows"))
+		if err != nil || flowCount < 0 {
+			return nil, AnalyticsInsights{}, fmt.Errorf("CSV row %d has an invalid Flows value", rowIndex+2)
+		}
+		port, err := strconv.Atoi(getValue(row, "Port"))
+		if err != nil || port < 0 || port > 65535 {
+			return nil, AnalyticsInsights{}, fmt.Errorf("CSV row %d has an invalid Port value", rowIndex+2)
+		}
 		protocol := getValue(row, "Protocol")
+		if protocol == "" {
+			return nil, AnalyticsInsights{}, fmt.Errorf("CSV row %d has an empty Protocol value", rowIndex+2)
+		}
 		protoNumber := protocolNumberFromName(protocol)
 		if protoNumber == 0 {
-			fmt.Sscanf(protocol, "%d", &protoNumber)
+			if numericProtocol, err := strconv.Atoi(protocol); err == nil && numericProtocol >= 0 && numericProtocol <= 255 {
+				protoNumber = numericProtocol
+			}
 		}
 
-		srcEnv := normalizeCSVValue(getValue(row, "Src Env"))
+		hasAnyValue := func(headers []string) bool {
+			for _, header := range headers {
+				value := normalizeCSVValue(getValue(row, header))
+				if value != "" && !strings.EqualFold(value, "External/Unmanaged") {
+					return true
+				}
+			}
+			return false
+		}
+		sourceManaged := hasAnyValue(sourceLabelHeaders)
+		destinationManaged := hasAnyValue(destinationLabelHeaders)
+
+		srcEnv := normalizeCSVValue(getValue(row, primarySourceHeader))
 		if srcEnv == "" {
 			srcEnv = "External/Unmanaged"
+			if sourceManaged {
+				srcEnv = "No " + strings.ToUpper(primaryLabelKey[:1]) + primaryLabelKey[1:] + " Label"
+			}
 		}
-		dstEnv := normalizeCSVValue(getValue(row, "Dst Env"))
+		dstEnv := normalizeCSVValue(getValue(row, primaryDestinationHeader))
 		if dstEnv == "" {
 			dstEnv = "External/Unmanaged"
+			if destinationManaged {
+				dstEnv = "No " + strings.ToUpper(primaryLabelKey[:1]) + primaryLabelKey[1:] + " Label"
+			}
 		}
-		srcApp := normalizeCSVValue(getValue(row, "Src App"))
+		srcApp := normalizeCSVValue(getValue(row, secondarySourceHeader))
 		if srcApp == "" {
 			srcApp = "External/Unmanaged"
+			if sourceManaged {
+				srcApp = "No " + strings.ToUpper(secondaryLabelKey[:1]) + secondaryLabelKey[1:] + " Label"
+			}
 		}
-		dstApp := normalizeCSVValue(getValue(row, "Dst App"))
+		dstApp := normalizeCSVValue(getValue(row, secondaryDestinationHeader))
 		if dstApp == "" {
 			dstApp = "External/Unmanaged"
+			if destinationManaged {
+				dstApp = "No " + strings.ToUpper(secondaryLabelKey[:1]) + secondaryLabelKey[1:] + " Label"
+			}
 		}
 
 		dstEndpoint := getValue(row, "Destination IP")
 		if fqdn := getValue(row, "FQDN"); fqdn != "" {
 			dstEndpoint = fqdn
 		}
-		firstSeen := parseCSVTimestamp(getValue(row, "First Detected"))
-		lastSeen := parseCSVTimestamp(getValue(row, "Last Detected"))
+		firstSeenRaw := getValue(row, "First Detected")
+		lastSeenRaw := getValue(row, "Last Detected")
+		firstSeen := parseCSVTimestamp(firstSeenRaw)
+		lastSeen := parseCSVTimestamp(lastSeenRaw)
+		if firstSeenRaw != "" && firstSeen.IsZero() {
+			return nil, AnalyticsInsights{}, fmt.Errorf("CSV row %d has an invalid First Detected timestamp", rowIndex+2)
+		}
+		if lastSeenRaw != "" && lastSeen.IsZero() {
+			return nil, AnalyticsInsights{}, fmt.Errorf("CSV row %d has an invalid Last Detected timestamp", rowIndex+2)
+		}
 
 		summary = append(summary, PortProtocolSummary{
 			Port:              port,
@@ -1108,8 +1665,8 @@ func parseCSVAnalytics(reader io.Reader) ([]PortProtocolSummary, AnalyticsInsigh
 			DstApp:     dstApp,
 			SrcIP:      getValue(row, "Source IP"),
 			DstIP:      dstEndpoint,
-			SrcManaged: srcEnv != "External/Unmanaged" || srcApp != "External/Unmanaged",
-			DstManaged: dstEnv != "External/Unmanaged" || dstApp != "External/Unmanaged",
+			SrcManaged: sourceManaged,
+			DstManaged: destinationManaged,
 			Protocol:   protocol,
 			Port:       port,
 			Month:      parseCSVMonthBucket(row, getValue),
@@ -1145,7 +1702,7 @@ func parseCSVAnalytics(reader io.Reader) ([]PortProtocolSummary, AnalyticsInsigh
 		return finalSummary[i].Protocol < finalSummary[j].Protocol
 	})
 
-	insights := buildInsights(records)
+	insights := buildInsightsForDimensions(records, primaryLabelKey, secondaryLabelKey)
 	insights.MonthlyPortProtocol = monthlyPortProtocolFromRecords(records)
 	return finalSummary, insights, nil
 }
@@ -1158,9 +1715,18 @@ func handleImportCSV(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Pragma", "no-cache")
 	w.Header().Set("Expires", "0")
 
-	if err := r.ParseMultipartForm(32 << 20); err != nil {
-		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
+	r.Body = http.MaxBytesReader(w, r.Body, maxCSVUploadSize)
+	if err := r.ParseMultipartForm(8 << 20); err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			writeJSONError(w, http.StatusRequestEntityTooLarge, fmt.Sprintf("CSV upload exceeds the %d MiB limit", maxCSVUploadSize>>20))
+		} else {
+			writeJSONError(w, http.StatusBadRequest, err.Error())
+		}
 		return
+	}
+	if r.MultipartForm != nil {
+		defer r.MultipartForm.RemoveAll()
 	}
 
 	file, header, err := r.FormFile("file")
@@ -1170,7 +1736,9 @@ func handleImportCSV(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	summary, insights, err := parseCSVAnalytics(file)
+	primaryLabelKey := r.FormValue("primary_label_key")
+	secondaryLabelKey := r.FormValue("secondary_label_key")
+	summary, insights, err := parseCSVAnalyticsWithDimensions(file, primaryLabelKey, secondaryLabelKey)
 	if err != nil {
 		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
 		return
@@ -1182,11 +1750,12 @@ func handleImportCSV(w http.ResponseWriter, r *http.Request) {
 	state.FileName = "Imported CSV: " + header.Filename
 	state.IsDone = true
 	state.IsCancelled = false
+	fileName := state.FileName
 	state.Mu.Unlock()
 
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success":  true,
-		"fileName": state.FileName,
+		"fileName": fileName,
 	})
 }
 
@@ -1195,11 +1764,17 @@ func handleStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var cfg Config
-	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
+	if err := decodeJSONBody(w, r, &cfg); err != nil {
 		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	rangeStart, rangeEnd, requestedDays, err := extractionDateRange(cfg, time.Now().UTC())
+	var err error
+	cfg, err = resolveConfigCredentials(cfg)
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	_, _, requestedDays, err := extractionDateRange(cfg, time.Now().UTC())
 	if err != nil {
 		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
@@ -1209,9 +1784,22 @@ func handleStart(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	requestedChunks := len(buildExtractionChunks(rangeStart, rangeEnd, chunkDuration))
+	requestedChunks := requestedDays * int((24*time.Hour)/chunkDuration)
+	if requestedChunks == 0 {
+		writeJSONError(w, http.StatusBadRequest, "the requested extraction window produced no query chunks")
+		return
+	}
+	if requestedChunks > maxExtractionChunks {
+		writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("the requested extraction would create %d chunks; the limit is %d", requestedChunks, maxExtractionChunks))
+		return
+	}
 
 	state.Mu.Lock()
+	if state.CancelFunc != nil {
+		state.Mu.Unlock()
+		writeJSONError(w, http.StatusConflict, "an extraction is already running")
+		return
+	}
 	state.CompletedChunks = 0
 	state.RequestedDays = requestedDays
 	state.RequestedChunks = requestedChunks
@@ -1224,13 +1812,70 @@ func handleStart(w http.ResponseWriter, r *http.Request) {
 	state.LastSummary = nil
 	state.LastInsights = AnalyticsInsights{}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), maxExtractionTime)
 	state.CancelFunc = cancel
 	state.Mu.Unlock()
 
 	addLog("Starting extraction...")
 	go runExtraction(ctx, cfg)
 	json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
+}
+
+func canonicalFlowLabels(labels []illumio.FlowLabel) string {
+	values := make([]string, 0, len(labels))
+	for _, label := range labels {
+		values = append(values, strings.ToLower(label.Key)+"="+label.Value)
+	}
+	sort.Strings(values)
+	return strings.Join(values, "\x1f")
+}
+
+func safeCSVCell(value string) string {
+	if value == "" {
+		return value
+	}
+	trimmedLeft := strings.TrimLeft(value, " \r\n")
+	if trimmedLeft == "" {
+		return value
+	}
+	switch trimmedLeft[0] {
+	case '=', '+', '-', '@', '\t':
+		return "'" + value
+	default:
+		return value
+	}
+}
+
+func normalizeImportedCSVCell(value string) string {
+	value = strings.TrimSpace(value)
+	if len(value) > 1 && value[0] == '\'' {
+		switch value[1] {
+		case '=', '+', '-', '@', '\t':
+			return value[1:]
+		}
+	}
+	return value
+}
+
+func outputCSVPath(savePath, fileName string) (string, error) {
+	name := strings.TrimSpace(fileName)
+	if name == "" {
+		name = fmt.Sprintf("BT_%s.csv", time.Now().Format("20060102_150405"))
+	}
+	if name != filepath.Base(name) || name == "." || name == string(filepath.Separator) {
+		return "", fmt.Errorf("target filename must be a filename without directory components")
+	}
+	if !strings.HasSuffix(strings.ToLower(name), ".csv") {
+		name += ".csv"
+	}
+	dir := strings.TrimSpace(savePath)
+	if dir == "" {
+		return name, nil
+	}
+	if !filepath.IsAbs(dir) {
+		return "", fmt.Errorf("target folder must be an absolute path")
+	}
+	return filepath.Join(filepath.Clean(dir), name), nil
 }
 
 func looksLikeIPAddress(value string) bool {
@@ -1572,6 +2217,10 @@ func categoryList(items map[string]TrafficCategorySummary) []TrafficCategorySumm
 }
 
 func buildInsights(records []AnalyticsRecord) AnalyticsInsights {
+	return buildInsightsForDimensions(records, "env", "app")
+}
+
+func buildInsightsForDimensions(records []AnalyticsRecord, primaryLabelKey, secondaryLabelKey string) AnalyticsInsights {
 	envMatrixMap := make(map[string]MatrixSummary)
 	appMatrixMap := make(map[string]MatrixSummary)
 	topSourceEnvMap := make(map[string]TalkerSummary)
@@ -1767,6 +2416,8 @@ func buildInsights(records []AnalyticsRecord) AnalyticsInsights {
 	sort.Strings(sourceCombinedOptions)
 
 	return AnalyticsInsights{
+		PrimaryLabelKey:       primaryLabelKey,
+		SecondaryLabelKey:     secondaryLabelKey,
 		EnvMatrix:             matrixFromMap(envMatrixMap),
 		AppMatrix:             matrixFromMap(appMatrixMap),
 		TopSourceEnvs:         topTalkersFromMap(topSourceEnvMap, 12),
@@ -1818,6 +2469,13 @@ func runExtraction(ctx context.Context, cfg Config) {
 	allUserGroups := discoveryData.UserGroups
 	allVServices := discoveryData.VirtualServices
 	allVServers := discoveryData.VirtualServers
+	primaryLabelKey, secondaryLabelKey, err := resolveAnalysisLabelKeys(cfg.AnalysisPrimary, cfg.AnalysisSecondary, allLabels)
+	if err != nil {
+		addLog(fmt.Sprintf("Error: %v", err))
+		markRunFinished("", false)
+		return
+	}
+	addLog(fmt.Sprintf("Analysis dimensions: primary=%s, secondary=%s", primaryLabelKey, secondaryLabelKey))
 
 	labelMap := make(map[string]string)
 	labelKeyMap := make(map[string]string)
@@ -1838,9 +2496,11 @@ func runExtraction(ctx context.Context, cfg Config) {
 			delete(uniqueKeys, k)
 		}
 	}
+	standardKeyCount := len(orderedKeys)
 	for k := range uniqueKeys {
 		orderedKeys = append(orderedKeys, k)
 	}
+	sort.Strings(orderedKeys[standardKeyCount:])
 
 	serviceMap := make(map[string][]interface{})
 	for _, s := range allServices {
@@ -1909,10 +2569,11 @@ func runExtraction(ctx context.Context, cfg Config) {
 	}
 
 	type FlowKey struct {
-		SrcIP, DstIP     string
-		Port, Proto      int
-		SrcWkld, DstWkld string
-		Process, FQDN    string
+		SrcIP, DstIP         string
+		Port, Proto          int
+		SrcWkld, DstWkld     string
+		Process, FQDN        string
+		SrcLabels, DstLabels string
 	}
 	aggregatedFlows := make(map[FlowKey]struct {
 		TotalCount          int
@@ -1939,37 +2600,64 @@ func runExtraction(ctx context.Context, cfg Config) {
 	}
 	chunks := buildExtractionChunks(rangeStart, rangeEnd, chunkDuration)
 
+	runCtx, cancelRun := context.WithCancel(ctx)
+	defer cancelRun()
 	jobs := make(chan int, len(chunks))
 	var wg sync.WaitGroup
+	var extractionErr error
+	var extractionErrOnce sync.Once
 	for w := 1; w <= 3; w++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for chunkIdx := range jobs {
 				select {
-				case <-ctx.Done():
+				case <-runCtx.Done():
 					return
 				default:
 					chunkReq := req
 					chunkReq.StartDate = chunks[chunkIdx].Start.Format(time.RFC3339)
 					chunkReq.EndDate = chunks[chunkIdx].End.Format(time.RFC3339)
-					flows, err := client.FetchDayOfTraffic(ctx, chunkReq, addLog)
+					var flows []illumio.TrafficFlow
+					var err error
+					for attempt := 1; attempt <= maxChunkAttempts; attempt++ {
+						chunkCtx, chunkCancel := context.WithTimeout(runCtx, maxChunkQueryTime)
+						flows, err = client.FetchDayOfTraffic(chunkCtx, chunkReq, addLog)
+						chunkCancel()
+						if err == nil || runCtx.Err() != nil {
+							break
+						}
+						if attempt < maxChunkAttempts {
+							addLog(fmt.Sprintf("Chunk %d/%d attempt %d/%d failed: %v; retrying...", chunkIdx+1, len(chunks), attempt, maxChunkAttempts, err))
+							delay := time.Duration(1<<uint(attempt-1)) * time.Second
+							select {
+							case <-time.After(delay):
+							case <-runCtx.Done():
+								return
+							}
+						}
+					}
 					if err == nil {
 						aggMu.Lock()
 						for _, f := range flows {
-							key := FlowKey{f.SrcIP, f.DstIP, f.DstPort, f.Proto, f.SrcWorkloadHref, f.DstWorkloadHref, f.ProcessName, f.DstFQDN}
+							key := FlowKey{
+								SrcIP: f.SrcIP, DstIP: f.DstIP, Port: f.DstPort, Proto: f.Proto,
+								SrcWkld: f.SrcWorkloadHref, DstWkld: f.DstWorkloadHref,
+								Process: f.ProcessName, FQDN: f.DstFQDN,
+								SrcLabels: canonicalFlowLabels(f.SrcLabels), DstLabels: canonicalFlowLabels(f.DstLabels),
+							}
 							entry, exists := aggregatedFlows[key]
 							if !exists {
-								entry.FirstSeen = f.Timestamp
-								entry.LastSeen = f.Timestamp
+								entry.FirstSeen = f.FirstDetected
+								entry.LastSeen = f.LastDetected
 								entry.Raw = f
 							}
 							entry.TotalCount += f.NumConnections
-							if f.Timestamp.Before(entry.FirstSeen) {
-								entry.FirstSeen = f.Timestamp
+							if entry.FirstSeen.IsZero() || (!f.FirstDetected.IsZero() && f.FirstDetected.Before(entry.FirstSeen)) {
+								entry.FirstSeen = f.FirstDetected
 							}
-							if f.Timestamp.After(entry.LastSeen) {
-								entry.LastSeen = f.Timestamp
+							if f.LastDetected.After(entry.LastSeen) {
+								entry.LastSeen = f.LastDetected
 							}
 							aggregatedFlows[key] = entry
 
@@ -1977,7 +2665,7 @@ func runExtraction(ctx context.Context, cfg Config) {
 							if name, ok := protoMap[f.Proto]; ok {
 								protocol = name
 							}
-							monthKey := monthBucketFromTime(f.Timestamp)
+							monthKey := monthBucketFromTime(f.FirstDetected)
 							summaryKey := fmt.Sprintf("%s|%s|%d", monthKey, protocol, f.DstPort)
 							monthEntry := monthlySummaryMap[summaryKey]
 							monthEntry.Month = monthKey
@@ -2003,6 +2691,11 @@ func runExtraction(ctx context.Context, cfg Config) {
 						addLog(fmt.Sprintf("Chunk %d/%d (%s to %s): %d connections gathered", chunkIdx+1, len(chunks), chunks[chunkIdx].Start.Format("2006-01-02 15:04Z"), chunks[chunkIdx].End.Format("2006-01-02 15:04Z"), len(flows)))
 					} else {
 						addLog(fmt.Sprintf("Error chunk %d/%d (%s to %s): %v", chunkIdx+1, len(chunks), chunks[chunkIdx].Start.Format("2006-01-02 15:04Z"), chunks[chunkIdx].End.Format("2006-01-02 15:04Z"), err))
+						extractionErrOnce.Do(func() {
+							extractionErr = fmt.Errorf("chunk %d/%d failed after %d attempts: %w", chunkIdx+1, len(chunks), maxChunkAttempts, err)
+							cancelRun()
+						})
+						return
 					}
 				}
 			}
@@ -2015,30 +2708,41 @@ func runExtraction(ctx context.Context, cfg Config) {
 	close(jobs)
 	wg.Wait()
 
+	if extractionErr != nil {
+		addLog(fmt.Sprintf("Extraction aborted without writing a CSV: %v", extractionErr))
+		markRunFinished("", false)
+		return
+	}
 	if ctx.Err() != nil {
-		markRunFinished("", true)
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			addLog(fmt.Sprintf("Extraction exceeded the %s overall time limit; no CSV was written.", maxExtractionTime))
+			markRunFinished("", false)
+		} else {
+			markRunFinished("", true)
+		}
 		return
 	}
 
-	finalName := cfg.FileName
-	if finalName == "" {
-		finalName = fmt.Sprintf("BT_%s.csv", time.Now().Format("20060102_150405"))
-	}
-	if !strings.HasSuffix(strings.ToLower(finalName), ".csv") {
-		finalName += ".csv"
-	}
-	finalPath := finalName
-	if cfg.SavePath != "" {
-		finalPath = filepath.Join(cfg.SavePath, finalName)
-	}
-
-	f, err := os.Create(finalPath)
+	finalPath, err := outputCSVPath(cfg.SavePath, cfg.FileName)
 	if err != nil {
 		addLog(fmt.Sprintf("Error: %v", err))
 		markRunFinished("", false)
 		return
 	}
-	defer f.Close()
+
+	f, err := os.OpenFile(finalPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
+		addLog(fmt.Sprintf("Error: %v", err))
+		markRunFinished("", false)
+		return
+	}
+	outputComplete := false
+	defer func() {
+		_ = f.Close()
+		if !outputComplete {
+			_ = os.Remove(finalPath)
+		}
+	}()
 
 	w := csv.NewWriter(f)
 
@@ -2052,7 +2756,11 @@ func runExtraction(ctx context.Context, cfg Config) {
 		header = append(header, "Dst "+strings.ToUpper(k[:1])+k[1:])
 	}
 	header = append(header, "FQDN", "Port", "Protocol", "Process Name", "Flows")
-	w.Write(header)
+	if err := w.Write(header); err != nil {
+		addLog(fmt.Sprintf("Error writing CSV header: %v", err))
+		markRunFinished("", false)
+		return
+	}
 
 	summaryMap := make(map[string]PortProtocolSummary)
 	analyticsRecords := make([]AnalyticsRecord, 0, len(aggregatedFlows))
@@ -2064,11 +2772,13 @@ func runExtraction(ctx context.Context, cfg Config) {
 		}
 		srcL := make(map[string][]string)
 		for _, l := range flow.SrcLabels {
-			srcL[l.Key] = append(srcL[l.Key], l.Value)
+			key := strings.ToLower(l.Key)
+			srcL[key] = append(srcL[key], l.Value)
 		}
 		dstL := make(map[string][]string)
 		for _, l := range flow.DstLabels {
-			dstL[l.Key] = append(dstL[l.Key], l.Value)
+			key := strings.ToLower(l.Key)
+			dstL[key] = append(dstL[key], l.Value)
 		}
 
 		row := []string{
@@ -2078,13 +2788,13 @@ func runExtraction(ctx context.Context, cfg Config) {
 		}
 		// Source Labels
 		for _, k := range orderedKeys {
-			row = append(row, strings.Join(srcL[k], ", "))
+			row = append(row, strings.Join(srcL[strings.ToLower(k)], ", "))
 		}
 		// Destination IP
 		row = append(row, flow.DstIP)
 		// Destination Labels
 		for _, k := range orderedKeys {
-			row = append(row, strings.Join(dstL[k], ", "))
+			row = append(row, strings.Join(dstL[strings.ToLower(k)], ", "))
 		}
 		// Final metadata
 		row = append(row,
@@ -2094,7 +2804,14 @@ func runExtraction(ctx context.Context, cfg Config) {
 			flow.ProcessName,
 			fmt.Sprintf("%d", entry.TotalCount),
 		)
-		w.Write(row)
+		for i := range row {
+			row[i] = safeCSVCell(row[i])
+		}
+		if err := w.Write(row); err != nil {
+			addLog(fmt.Sprintf("Error writing CSV row: %v", err))
+			markRunFinished("", false)
+			return
+		}
 
 		summaryKey := fmt.Sprintf("%s:%d", protocol, flow.DstPort)
 		summaryEntry := summaryMap[summaryKey]
@@ -2106,10 +2823,10 @@ func runExtraction(ctx context.Context, cfg Config) {
 		summaryMap[summaryKey] = summaryEntry
 
 		analyticsRecords = append(analyticsRecords, AnalyticsRecord{
-			SrcEnv:     externalOrManagedLabel(flow, true, "env"),
-			DstEnv:     externalOrManagedLabel(flow, false, "env"),
-			SrcApp:     externalOrManagedLabel(flow, true, "app"),
-			DstApp:     externalOrManagedLabel(flow, false, "app"),
+			SrcEnv:     externalOrManagedLabel(flow, true, primaryLabelKey),
+			DstEnv:     externalOrManagedLabel(flow, false, primaryLabelKey),
+			SrcApp:     externalOrManagedLabel(flow, true, secondaryLabelKey),
+			DstApp:     externalOrManagedLabel(flow, false, secondaryLabelKey),
 			SrcIP:      endpointDisplayName(flow, true),
 			DstIP:      endpointDisplayName(flow, false),
 			DstFQDN:    flow.DstFQDN,
@@ -2123,6 +2840,16 @@ func runExtraction(ctx context.Context, cfg Config) {
 	w.Flush()
 	if err := w.Error(); err != nil {
 		addLog(fmt.Sprintf("Error writing CSV: %v", err))
+		markRunFinished("", false)
+		return
+	}
+	if err := f.Sync(); err != nil {
+		addLog(fmt.Sprintf("Error syncing CSV: %v", err))
+		markRunFinished("", false)
+		return
+	}
+	if err := f.Close(); err != nil {
+		addLog(fmt.Sprintf("Error closing CSV: %v", err))
 		markRunFinished("", false)
 		return
 	}
@@ -2179,7 +2906,7 @@ func runExtraction(ctx context.Context, cfg Config) {
 		return monthlySummaries[i].Port < monthlySummaries[j].Port
 	})
 
-	insights := buildInsights(analyticsRecords)
+	insights := buildInsightsForDimensions(analyticsRecords, primaryLabelKey, secondaryLabelKey)
 	insights.MonthlyPortProtocol = monthlySummaries
 
 	state.Mu.Lock()
@@ -2187,6 +2914,7 @@ func runExtraction(ctx context.Context, cfg Config) {
 	state.LastInsights = insights
 	state.Mu.Unlock()
 
+	outputComplete = true
 	addLog(fmt.Sprintf("SUCCESS: Final data saved to %s", finalPath))
 	markRunFinished(finalPath, false)
 }
