@@ -11,6 +11,8 @@ To provide a stable, cross-platform standalone tool that extracts "Reported Poli
 - **Request Hardening:** State-changing API routes enforce expected HTTP methods and origin evidence. The server validates loopback hosts, applies security headers with per-response script nonces, limits request bodies, and configures HTTP timeouts.
 - **Portability:** 100% Go implementation (no CGO) to ensure flawless cross-compilation from a single build environment.
 - **Persistence:** A JSON profile file under the current user's OS configuration directory stores PCE credentials and query configurations.
+- **Automation Persistence:** A separate owner-only `automation.json` store contains templates, schedules, delivery credentials, queued work, run history, comparison snapshots, and delivery results. Templates reference PCE profiles by name and never duplicate PCE credentials.
+- **Single Process Ownership:** An OS-level non-blocking file lock prevents multiple UI, scheduler, or headless processes from mutating the same per-user stores or running overlapping extractions.
 - **Local Credential File Permissions:** Profile changes use atomic replacement and owner-only directory/file permissions. Profile-list responses omit API keys and secrets.
 
 ## 3. Core Features
@@ -31,6 +33,8 @@ To provide a stable, cross-platform standalone tool that extracts "Reported Poli
 - **PCE Schema Compliance:** Ensures all mandatory fields (`query_name`, `services`, `exclude`) are present in every request to prevent HTTP 406 errors.
 - **Resilience:** Automatic cooldown on HTTP 429 responses, bounded query-creation retries, per-chunk deadlines, bounded chunk retries, and a 24-hour overall run deadline.
 - **Completeness Guarantee:** If any chunk ultimately fails, extraction aborts and no partial CSV is reported as successful.
+- **Reusable Runner:** Interactive, queued, scheduled, and `--run-template` executions share the same validated extraction path. The persistent worker serializes jobs and waits for an active interactive run instead of overlapping it.
+- **Restart Recovery:** Queued jobs survive restarts; a job left in `running` state is marked failed with an interruption reason. Schedule policy determines whether one missed run is queued after startup or skipped.
 - **Service Filtering:** Supports both Illumio service references and direct protocol/port filters such as `TCP:445` and `UDP:5355`.
 - **Selector Hardening:** Unknown source, destination, and exclusion values are only treated as IP filters when they parse as valid IP/CIDR values; otherwise they are skipped and logged as warnings.
 - **Connection Test:** The UI connection check uses a lightweight authenticated API request rather than a full discovery collection load.
@@ -56,6 +60,16 @@ To provide a stable, cross-platform standalone tool that extracts "Reported Poli
 - **CSV Re-Import:** Previously generated CSV files from this tool can be uploaded with explicit primary/secondary label keys to rebuild the analytics dashboard without rerunning the query. Dimension column matching is case-insensitive, and the summary API disables response caching so imported analytics are shown immediately.
 - **Heatmap Drilldown:** The heatmap explorer renders full primary, secondary, or combined matrices from the complete analytics dataset and uses pair-level protocol/port aggregates for click-through drilldown, with pivot-style multi-select filters for both the matrix and the drilldown table.
 - **Monthly Breakdown:** Live fetches compute exact per-month port/protocol flow totals while processing daily chunks. The monthly table also tracks both observed unique connections and month-spanning active connections based on each merged connection's first/last detected timestamps. Imported CSVs preserve the same distinction using the recorded detection month for observed flows and the row's first/last detected timestamps for active-month coverage.
+
+### Automation and Delivery
+
+- **Templates:** Store filters, selected analytics dimensions, rolling lookback, chunking, filename tokens, output location, retention, schedule, alert policy, and destination references. Template export excludes IDs, timestamps, credentials, and destination associations; imports start disabled so local profiles and destinations can be reviewed before activation.
+- **Schedules:** Daily, weekdays, weekly, monthly, and standard five-field cron schedules run in an explicit IANA timezone. Monthly schedules intentionally limit the day to 1–28 for deterministic behavior.
+- **Artifacts:** Scheduled filenames support `{template}`, `{date}`, `{time}`, `{timestamp}`, and `{run_id}`. Creation and delivery refuse overwrites. Retention deletes only absolute artifact paths recorded for that same template.
+- **Change Detection:** Each successful run records flow totals, external traffic, primary relationships, and protocol/port pairs. The next run derives flow percentage change plus newly observed relationships and services for conditional alerts.
+- **Boundary Classification:** General top destinations and external/unmanaged destinations are maintained as separate aggregates. External destination rankings contain only records whose destination endpoint lacks workload classification; unmanaged sources do not cause a managed destination to enter that list.
+- **Delivery Adapters:** Generic JSON/multipart webhooks, Slack incoming-webhook messages, Slack external file upload, Teams Workflow Adaptive Cards with optional base64 file data, TLS-capable SMTP attachments, shared-folder copies, and SFTP uploads.
+- **Outbound Safety:** Webhook URLs require HTTPS unless private-network access is explicitly enabled. DNS results and redirects are checked against loopback, private, link-local, multicast, and unspecified address ranges, and webhook connections bypass environment proxies so target validation cannot be delegated to a different resolver. SFTP requires a pinned host public key. Secrets are excluded from browser APIs and redacted from delivery failures.
 
 ## 4. CSV Schema
 The CSV is dynamically structured based on the PCE's label keys:

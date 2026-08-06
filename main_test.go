@@ -594,6 +594,59 @@ func TestParseCSVAnalyticsDistinguishesMissingCustomLabelFromExternal(t *testing
 	}
 }
 
+func TestImportedManagedDestinationIsNotRankedAsExternal(t *testing.T) {
+	t.Parallel()
+
+	csvData := strings.Join([]string{
+		"Source IP,Destination IP,Port,Protocol,Flows,Src BU,Dst BU,Src App,Dst App,Src OS,Dst OS",
+		"198.51.100.10,204.99.40.91,21,TCP,6,,BU-PCW,,A-DISPENSING-TRISTAR,,OS-AIX",
+		"204.99.43.130,204.99.40.91,21,TCP,9,BU-PCW,BU-PCW,A-MAIL-ORDER-LINKS,A-DISPENSING-TRISTAR,OS-AIX,OS-AIX",
+		"204.99.43.130,203.0.113.25,443,TCP,4,BU-PCW,,A-MAIL-ORDER-LINKS,,OS-AIX,",
+	}, "\n")
+	_, insights, err := parseCSVAnalyticsWithDimensions(strings.NewReader(csvData), "BU", "app")
+	if err != nil {
+		t.Fatalf("parseCSVAnalyticsWithDimensions returned error: %v", err)
+	}
+	if len(insights.TopDestinationIPs) != 2 || insights.TopDestinationIPs[0].Name != "204.99.40.91" || insights.TopDestinationIPs[0].FlowCount != 15 {
+		t.Fatalf("general top destinations = %#v", insights.TopDestinationIPs)
+	}
+	if len(insights.TopExternalDestinationIPs) != 1 {
+		t.Fatalf("external destinations = %#v", insights.TopExternalDestinationIPs)
+	}
+	external := insights.TopExternalDestinationIPs[0]
+	if external.Name != "203.0.113.25" || external.FlowCount != 4 || external.UniqueConnections != 1 {
+		t.Fatalf("external destination = %#v", external)
+	}
+	for _, destination := range insights.TopExternalDestinationIPs {
+		if destination.Name == "204.99.40.91" {
+			t.Fatalf("labeled managed destination was ranked as external: %#v", destination)
+		}
+	}
+}
+
+func TestExternalDestinationViewsUseDedicatedDataset(t *testing.T) {
+	t.Parallel()
+	summaryPage, err := staticFiles.ReadFile("frontend/summary.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	executivePage, err := staticFiles.ReadFile("frontend/executive-summary.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(summaryPage), "const externalDestinations = insights.top_external_destination_ips || [];") {
+		t.Fatal("analytics external-destination list is not using the dedicated backend dataset")
+	}
+	for _, expected := range []string{
+		"const topExternal = (insights.top_external_destination_ips || [])[0];",
+		"renderExternalSpotlight(insights.top_external_destination_ips || []);",
+	} {
+		if !strings.Contains(string(executivePage), expected) {
+			t.Fatalf("executive summary is missing dedicated external-destination usage %q", expected)
+		}
+	}
+}
+
 func TestResolveConfigCredentialsUsesServerSideProfile(t *testing.T) {
 	state.Mu.Lock()
 	previousProfiles := state.Profiles

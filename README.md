@@ -4,6 +4,8 @@ A local desktop-style Go application for extracting blocked traffic from an Illu
 
 Analytics dimensions are configurable from the PCE's discovered label types. The traditional `env` and `app` views remain the defaults, while custom keys such as `BU`, `region`, or `division` can be selected as the primary or secondary dimension and are carried through profiles, dashboards, heatmaps, executive summaries, and CSV re-import.
 
+The local Automation workspace at `/automation` adds reusable report templates, persistent scheduled runs, run-to-run change detection, artifact retention, and delivery through generic webhooks, Slack, Teams Workflows, email, shared folders, or host-key-pinned SFTP.
+
 ## Security model
 
 The application is intentionally local-only. It binds exclusively to `127.0.0.1`, validates loopback HTTP hosts and same-origin state-changing requests, and does not provide remote hosting or multi-user authentication. Do not place it behind a reverse proxy or expose it through a port-forward.
@@ -29,6 +31,20 @@ go run . -port 9090 -open-browser=false
 
 Equivalent environment variables are `ITT_PORT` and `ITT_OPEN_BROWSER`.
 
+Run a saved template without starting the browser:
+
+```bash
+./IllumioTrafficTool_Linux --run-template "Weekly Report"
+```
+
+Run only the persistent scheduler:
+
+```bash
+./IllumioTrafficTool_Linux --scheduler-only --open-browser=false
+```
+
+Only one process may use a user's profile and automation stores at a time. The provided startup installers normally run the full local application with browser opening disabled, so both the scheduler and UI remain available from one process.
+
 See [USAGE.md](USAGE.md) for the complete operator guide and [DESIGN.md](DESIGN.md) for implementation details.
 
 ## Validation
@@ -40,7 +56,7 @@ go vet ./...
 govulncheck ./...
 ```
 
-The optional live PCE smoke test is documented in [USAGE.md](USAGE.md#10-validation-and-smoke-testing).
+The optional live PCE smoke test is documented in [USAGE.md](USAGE.md#11-validation-and-smoke-testing).
 
 ## Build assets and releases
 

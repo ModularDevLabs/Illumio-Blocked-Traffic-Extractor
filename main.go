@@ -16,11 +16,13 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"illumio-traffic-tool-v2/illumio"
@@ -112,6 +114,7 @@ type AppState struct {
 	LastInsights     AnalyticsInsights
 	DiscoveryCache   *DiscoveryData
 	DiscoveryKey     string
+	RunError         string
 }
 
 type PortProtocolSummary struct {
@@ -178,23 +181,24 @@ type MonthlyPortProtocolSummary struct {
 }
 
 type AnalyticsInsights struct {
-	PrimaryLabelKey       string                        `json:"primary_label_key"`
-	SecondaryLabelKey     string                        `json:"secondary_label_key"`
-	EnvMatrix             []MatrixSummary               `json:"env_matrix"`
-	AppMatrix             []MatrixSummary               `json:"app_matrix"`
-	TopSourceEnvs         []TalkerSummary               `json:"top_source_envs"`
-	TopDestinationEnvs    []TalkerSummary               `json:"top_destination_envs"`
-	TopSourceIPs          []TalkerSummary               `json:"top_source_ips"`
-	TopDestinationIPs     []TalkerSummary               `json:"top_destination_ips"`
-	TopAppPairs           []TalkerSummary               `json:"top_app_pairs"`
-	TrafficCategories     []TrafficCategorySummary      `json:"traffic_categories"`
-	EnvServicePivot       []EnvServicePivotSummary      `json:"env_service_pivot"`
-	SourceEnvOptions      []string                      `json:"source_env_options"`
-	AppServicePivot       []AppServicePivotSummary      `json:"app_service_pivot"`
-	SourceAppOptions      []string                      `json:"source_app_options"`
-	CombinedServicePivot  []CombinedServicePivotSummary `json:"combined_service_pivot"`
-	SourceCombinedOptions []string                      `json:"source_combined_options"`
-	MonthlyPortProtocol   []MonthlyPortProtocolSummary  `json:"monthly_port_protocol"`
+	PrimaryLabelKey           string                        `json:"primary_label_key"`
+	SecondaryLabelKey         string                        `json:"secondary_label_key"`
+	EnvMatrix                 []MatrixSummary               `json:"env_matrix"`
+	AppMatrix                 []MatrixSummary               `json:"app_matrix"`
+	TopSourceEnvs             []TalkerSummary               `json:"top_source_envs"`
+	TopDestinationEnvs        []TalkerSummary               `json:"top_destination_envs"`
+	TopSourceIPs              []TalkerSummary               `json:"top_source_ips"`
+	TopDestinationIPs         []TalkerSummary               `json:"top_destination_ips"`
+	TopExternalDestinationIPs []TalkerSummary               `json:"top_external_destination_ips"`
+	TopAppPairs               []TalkerSummary               `json:"top_app_pairs"`
+	TrafficCategories         []TrafficCategorySummary      `json:"traffic_categories"`
+	EnvServicePivot           []EnvServicePivotSummary      `json:"env_service_pivot"`
+	SourceEnvOptions          []string                      `json:"source_env_options"`
+	AppServicePivot           []AppServicePivotSummary      `json:"app_service_pivot"`
+	SourceAppOptions          []string                      `json:"source_app_options"`
+	CombinedServicePivot      []CombinedServicePivotSummary `json:"combined_service_pivot"`
+	SourceCombinedOptions     []string                      `json:"source_combined_options"`
+	MonthlyPortProtocol       []MonthlyPortProtocolSummary  `json:"monthly_port_protocol"`
 }
 
 type AnalyticsRecord struct {
@@ -245,15 +249,23 @@ func addLog(msg string) {
 	state.Mu.Lock()
 	defer state.Mu.Unlock()
 	state.Logs = append(state.Logs, msg)
+	lower := strings.ToLower(strings.TrimSpace(msg))
+	if strings.HasPrefix(lower, "error") || strings.Contains(lower, "aborted without writing") || strings.Contains(lower, "time limit") {
+		state.RunError = msg
+	}
 }
 
 func markRunFinished(fileName string, cancelled bool) {
 	state.Mu.Lock()
-	defer state.Mu.Unlock()
+	cancel := state.CancelFunc
 	state.IsDone = true
 	state.IsCancelled = cancelled
 	state.FileName = fileName
 	state.CancelFunc = nil
+	state.Mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
 }
 
 func discoveryCacheKey(cfg Config) string {
@@ -663,14 +675,53 @@ func serveEmbeddedHTML(w http.ResponseWriter, fileName string) {
 }
 
 func main() {
-	loadProfiles()
-
 	defaultPort := envOrDefault("ITT_PORT", "8080")
 	defaultOpenBrowser := boolEnvOrDefault("ITT_OPEN_BROWSER", true)
 
 	port := flag.String("port", defaultPort, "Port to bind the web server to")
 	openBrowser := flag.Bool("open-browser", defaultOpenBrowser, "Automatically open the local web UI in a browser")
+	runTemplate := flag.String("run-template", "", "Run a saved report template by name or ID, then exit")
+	schedulerOnly := flag.Bool("scheduler-only", false, "Run scheduled templates without starting the web UI")
 	flag.Parse()
+	lock, err := acquireInstanceLock()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer lock.Close()
+	loadProfiles()
+	if err := automation.load(); err != nil {
+		log.Printf("failed to load automation store: %v", err)
+	}
+	appCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	if strings.TrimSpace(*runTemplate) != "" {
+		automation.start(appCtx, false)
+		template, ok := findTemplate(*runTemplate)
+		if !ok {
+			log.Fatalf("template %q was not found", *runTemplate)
+		}
+		run, err := automation.queueRun(template.ID, "manual")
+		if err != nil {
+			log.Fatal(err)
+		}
+		completed, err := waitForAutomationRun(appCtx, run.ID)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Printf("Template completed: %s\n", completed.ArtifactPath)
+		return
+	}
+
+	automation.start(appCtx, true)
+	if *schedulerOnly {
+		fmt.Println("Automation scheduler is running. Press Ctrl+C to stop.")
+		<-appCtx.Done()
+		if !automation.waitForStop(10 * time.Second) {
+			log.Printf("automation worker did not stop within the shutdown grace period")
+		}
+		return
+	}
 	validatedPort, err := validatePort(*port)
 	if err != nil {
 		log.Fatal(err)
@@ -723,6 +774,13 @@ func main() {
 		}
 		serveEmbeddedHTML(w, "frontend/heatmaps.html")
 	})
+	mux.HandleFunc("/automation", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		serveEmbeddedHTML(w, "frontend/automation.html")
+	})
 
 	mux.HandleFunc("/api/test", handleTest)
 	mux.HandleFunc("/api/traffic-db-metrics", handleTrafficDBMetrics)
@@ -732,6 +790,7 @@ func main() {
 	mux.HandleFunc("/api/status", handleStatus)
 	mux.HandleFunc("/api/results/summary", handleSummary)
 	mux.HandleFunc("/api/results/import-csv", handleImportCSV)
+	registerAutomationHandlers(mux)
 
 	mux.HandleFunc("/api/profiles/get", func(w http.ResponseWriter, r *http.Request) {
 		if !requireMethod(w, r, http.MethodGet) {
@@ -769,7 +828,26 @@ func main() {
 		WriteTimeout:      20 * time.Minute,
 		IdleTimeout:       60 * time.Second,
 	}
-	log.Fatal(server.ListenAndServe())
+	serverErr := make(chan error, 1)
+	go func() {
+		serverErr <- server.ListenAndServe()
+	}()
+	select {
+	case err := <-serverErr:
+		if !errors.Is(err, http.ErrServerClosed) {
+			log.Fatal(err)
+		}
+	case <-appCtx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			log.Printf("server shutdown: %v", err)
+		}
+	}
+	stop()
+	if !automation.waitForStop(10 * time.Second) {
+		log.Printf("automation worker did not stop within the shutdown grace period")
+	}
 }
 
 func handleDiscovery(w http.ResponseWriter, r *http.Request) {
@@ -958,6 +1036,15 @@ func handleDeleteProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Name = strings.TrimSpace(req.Name)
+	automation.mu.Lock()
+	for _, template := range automation.data.Templates {
+		if template.ProfileName == req.Name {
+			automation.mu.Unlock()
+			writeJSONError(w, http.StatusConflict, fmt.Sprintf("profile is used by automation template %q", template.Name))
+			return
+		}
+	}
+	automation.mu.Unlock()
 	state.Mu.Lock()
 	previous, existed := state.Profiles[req.Name]
 	delete(state.Profiles, req.Name)
@@ -1768,37 +1855,53 @@ func handleStart(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	var err error
-	cfg, err = resolveConfigCredentials(cfg)
+	resolved, ctx, err := beginExtraction(cfg)
 	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, err.Error())
+		status := http.StatusBadRequest
+		if strings.Contains(err.Error(), "already running") {
+			status = http.StatusConflict
+		}
+		writeJSONError(w, status, err.Error())
 		return
 	}
-	_, _, requestedDays, err := extractionDateRange(cfg, time.Now().UTC())
-	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, err.Error())
-		return
+
+	addLog("Starting extraction...")
+	go runExtraction(ctx, resolved)
+	json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
+}
+
+func beginExtraction(cfg Config) (Config, context.Context, error) {
+	return beginExtractionWithContext(context.Background(), cfg)
+}
+
+func beginExtractionWithContext(parent context.Context, cfg Config) (Config, context.Context, error) {
+	if parent == nil {
+		parent = context.Background()
 	}
-	chunkDuration, chunkLabel, err := parseChunkInterval(cfg.ChunkIntvl)
+	resolved, err := resolveConfigCredentials(cfg)
 	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, err.Error())
-		return
+		return Config{}, nil, err
+	}
+	_, _, requestedDays, err := extractionDateRange(resolved, time.Now().UTC())
+	if err != nil {
+		return Config{}, nil, err
+	}
+	chunkDuration, chunkLabel, err := parseChunkInterval(resolved.ChunkIntvl)
+	if err != nil {
+		return Config{}, nil, err
 	}
 	requestedChunks := requestedDays * int((24*time.Hour)/chunkDuration)
 	if requestedChunks == 0 {
-		writeJSONError(w, http.StatusBadRequest, "the requested extraction window produced no query chunks")
-		return
+		return Config{}, nil, fmt.Errorf("the requested extraction window produced no query chunks")
 	}
 	if requestedChunks > maxExtractionChunks {
-		writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("the requested extraction would create %d chunks; the limit is %d", requestedChunks, maxExtractionChunks))
-		return
+		return Config{}, nil, fmt.Errorf("the requested extraction would create %d chunks; the limit is %d", requestedChunks, maxExtractionChunks)
 	}
 
 	state.Mu.Lock()
 	if state.CancelFunc != nil {
 		state.Mu.Unlock()
-		writeJSONError(w, http.StatusConflict, "an extraction is already running")
-		return
+		return Config{}, nil, fmt.Errorf("an extraction is already running")
 	}
 	state.CompletedChunks = 0
 	state.RequestedDays = requestedDays
@@ -1811,14 +1914,12 @@ func handleStart(w http.ResponseWriter, r *http.Request) {
 	state.FileName = ""
 	state.LastSummary = nil
 	state.LastInsights = AnalyticsInsights{}
+	state.RunError = ""
 
-	ctx, cancel := context.WithTimeout(context.Background(), maxExtractionTime)
+	ctx, cancel := context.WithTimeout(parent, maxExtractionTime)
 	state.CancelFunc = cancel
 	state.Mu.Unlock()
-
-	addLog("Starting extraction...")
-	go runExtraction(ctx, cfg)
-	json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
+	return resolved, ctx, nil
 }
 
 func canonicalFlowLabels(labels []illumio.FlowLabel) string {
@@ -2227,6 +2328,7 @@ func buildInsightsForDimensions(records []AnalyticsRecord, primaryLabelKey, seco
 	topDestinationEnvMap := make(map[string]TalkerSummary)
 	topSourceIPMap := make(map[string]TalkerSummary)
 	topDestinationIPMap := make(map[string]TalkerSummary)
+	topExternalDestinationIPMap := make(map[string]TalkerSummary)
 	topAppPairMap := make(map[string]TalkerSummary)
 	categoryMap := make(map[string]TrafficCategorySummary)
 	envServicePivotMap := make(map[string]EnvServicePivotSummary)
@@ -2283,6 +2385,13 @@ func buildInsightsForDimensions(records []AnalyticsRecord, primaryLabelKey, seco
 		dstIPEntry.FlowCount += record.FlowCount
 		dstIPEntry.UniqueConnections++
 		topDestinationIPMap[dstEndpoint] = dstIPEntry
+		if !record.DstManaged {
+			externalDstEntry := topExternalDestinationIPMap[dstEndpoint]
+			externalDstEntry.Name = dstEndpoint
+			externalDstEntry.FlowCount += record.FlowCount
+			externalDstEntry.UniqueConnections++
+			topExternalDestinationIPMap[dstEndpoint] = externalDstEntry
+		}
 
 		appPairName := record.SrcApp + " -> " + record.DstApp
 		appPairEntry := topAppPairMap[appPairName]
@@ -2416,22 +2525,23 @@ func buildInsightsForDimensions(records []AnalyticsRecord, primaryLabelKey, seco
 	sort.Strings(sourceCombinedOptions)
 
 	return AnalyticsInsights{
-		PrimaryLabelKey:       primaryLabelKey,
-		SecondaryLabelKey:     secondaryLabelKey,
-		EnvMatrix:             matrixFromMap(envMatrixMap),
-		AppMatrix:             matrixFromMap(appMatrixMap),
-		TopSourceEnvs:         topTalkersFromMap(topSourceEnvMap, 12),
-		TopDestinationEnvs:    topTalkersFromMap(topDestinationEnvMap, 12),
-		TopSourceIPs:          topTalkersFromMap(topSourceIPMap, 12),
-		TopDestinationIPs:     topTalkersFromMap(topDestinationIPMap, 12),
-		TopAppPairs:           topTalkersFromMap(topAppPairMap, 15),
-		TrafficCategories:     categoryList(categoryMap),
-		EnvServicePivot:       envServicePivot,
-		SourceEnvOptions:      sourceEnvOptions,
-		AppServicePivot:       appServicePivot,
-		SourceAppOptions:      sourceAppOptions,
-		CombinedServicePivot:  combinedServicePivot,
-		SourceCombinedOptions: sourceCombinedOptions,
+		PrimaryLabelKey:           primaryLabelKey,
+		SecondaryLabelKey:         secondaryLabelKey,
+		EnvMatrix:                 matrixFromMap(envMatrixMap),
+		AppMatrix:                 matrixFromMap(appMatrixMap),
+		TopSourceEnvs:             topTalkersFromMap(topSourceEnvMap, 12),
+		TopDestinationEnvs:        topTalkersFromMap(topDestinationEnvMap, 12),
+		TopSourceIPs:              topTalkersFromMap(topSourceIPMap, 12),
+		TopDestinationIPs:         topTalkersFromMap(topDestinationIPMap, 12),
+		TopExternalDestinationIPs: topTalkersFromMap(topExternalDestinationIPMap, 12),
+		TopAppPairs:               topTalkersFromMap(topAppPairMap, 15),
+		TrafficCategories:         categoryList(categoryMap),
+		EnvServicePivot:           envServicePivot,
+		SourceEnvOptions:          sourceEnvOptions,
+		AppServicePivot:           appServicePivot,
+		SourceAppOptions:          sourceAppOptions,
+		CombinedServicePivot:      combinedServicePivot,
+		SourceCombinedOptions:     sourceCombinedOptions,
 	}
 }
 

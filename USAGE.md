@@ -143,7 +143,88 @@ Notes:
 -   This is useful if the app was restarted or the original in-memory analytics state is no longer present.
 -   After import, `/summary` now forces a fresh analytics reload so the imported dataset appears immediately instead of reusing an older empty-state response.
 
-## 10. Validation and Smoke Testing
+## 10. Templates, Scheduling, and Delivery
+
+Open `/automation` or click **Templates & Automation** on the extractor page.
+
+### Create a template
+
+1.  Select a saved PCE profile. A new template can copy that profile's current filters and analytics dimensions as a starting point.
+2.  Enter the template name, filters, rolling number of trailing days, chunk interval, and an absolute output folder.
+3.  Use a filename pattern. The recommended default is `blocked-{template}-{date}-{time}.csv`; supported tokens are `{template}`, `{date}`, `{time}`, `{timestamp}`, and `{run_id}`.
+4.  Set the number of local artifacts to retain. Retention only removes paths previously recorded as successful artifacts for this template.
+5.  Save the template, then use **Queue Manual Run** to verify it. Manual delivery is disabled unless selected in the alert policy.
+
+Templates can be duplicated or exported as JSON. Imported/exported templates contain no PCE credentials, delivery credentials, IDs, or scheduler state. A template cannot be saved without an existing PCE profile, and a profile or delivery destination cannot be deleted while a template references it.
+
+### Configure a schedule
+
+Available frequencies are daily, weekdays, weekly, monthly, and a standard five-field cron expression. Every schedule requires an IANA timezone such as `America/Chicago` or `UTC`.
+
+-   **Run once after startup:** Queues one missed execution when the app was not running at the scheduled time.
+-   **Skip missed run:** Advances directly to the next future occurrence.
+-   **Queue another:** Preserves every due execution in the single-worker queue.
+-   **Skip overlap:** Does not add another job while that template is queued or running.
+
+Schedules run only while the application process is running. Queued jobs persist across restarts; an interrupted running job is marked failed rather than silently retried.
+
+### Configure delivery destinations
+
+-   **Generic Webhook:** Sends summary JSON, JSON with a base64 CSV, or multipart metadata plus a CSV file. Inline base64 is limited to 4 MiB; use multipart for larger reports. HTTPS is required unless private-network access is explicitly enabled.
+-   **Slack Webhook:** Sends a formatted notification to the webhook's configured channel. Incoming webhooks do not upload files.
+-   **Slack App:** Requires a bot token with `files:write` and a channel ID. The app must be a member of the destination channel. CSV delivery uses Slack's external upload URL and completion APIs.
+-   **Teams Workflow:** Posts an Adaptive Card to a `When a Teams webhook request is received` URL. In base64 mode, `file_name`, `file_base64`, and `file_sha256` are added to the request so the Power Automate workflow can validate and create the CSV in SharePoint or OneDrive. Inline files are limited to 4 MiB.
+-   **Email / SMTP:** Sends the CSV as a MIME attachment. TLS can use implicit TLS on port 465 or STARTTLS on other ports such as 587. Authenticated SMTP requires TLS; TLS may be disabled only for an unauthenticated local relay.
+-   **Shared Folder:** Copies the CSV to an absolute local, mounted, or network-share path without overwriting an existing file.
+-   **SFTP:** Uploads the CSV using a password or absolute private-key path. The server's public host key is mandatory and pinned; insecure host-key bypass is not supported.
+
+Use **Test Saved Destination** before associating a destination with a template. Webhook URLs, tokens, header values, SMTP passwords, and SFTP passwords are stored only in the owner-readable local automation store and are not returned to the browser.
+
+Exported template files omit destination associations. Imported templates keep their query and schedule settings but start with scheduling disabled, so you can select local profiles and destinations and review them before activation.
+
+### Configure alert conditions
+
+Delivery can occur after every successful run, only when the report changes, or when thresholds match. Conditions include:
+
+-   Minimum blocked flow count
+-   Absolute run-to-run flow percentage change
+-   Newly observed primary-dimension relationships
+-   Newly observed protocol/port pairs
+-   External/unmanaged traffic
+-   Extraction failures
+
+The first successful run has no baseline and is eligible for delivery. Run history records why delivery was skipped or the result for every attempted destination.
+
+### Headless and start-at-login operation
+
+Run one template and exit:
+
+```bash
+./IllumioTrafficTool_Linux --run-template "Weekly Report"
+```
+
+Run the scheduler without the local web server:
+
+```bash
+./IllumioTrafficTool_Linux --scheduler-only --open-browser=false
+```
+
+Only one application process can use the current user's stores. For normal start-at-login use, the installers run the full application with browser opening disabled, leaving both scheduling and `http://localhost:8080` available:
+
+```bash
+./scripts/install_scheduler_linux.sh /absolute/path/IllumioTrafficTool_Linux
+./scripts/install_scheduler_macos.sh /absolute/path/IllumioTrafficTool_MacOS_AppleSilicon
+```
+
+On Windows, run PowerShell as the intended desktop user:
+
+```powershell
+.\scripts\install_scheduler_windows.ps1 -BinaryPath C:\Tools\IllumioTrafficTool_Windows.exe
+```
+
+Pass `--uninstall` to the Linux/macOS scripts or `-Uninstall` to the Windows script to remove the startup integration.
+
+## 11. Validation and Smoke Testing
 Two test layers are available:
 
 -   `go test ./...`
@@ -164,7 +245,7 @@ The live smoke test validates:
 -   discovery calls
 -   Explorer acceptance of direct service filters like `TCP:445` and `UDP:5355`
 
-## 11. Troubleshooting
+## 12. Troubleshooting
 -   **HTTP 401/403:** Your API Key or Secret is incorrect, or the user does not have permission to run traffic queries.
 -   **HTTP 404:** The PCE URL or Org ID is incorrect.
 -   **Connection Refused:** Ensure your machine has network access to the PCE URL provided.
@@ -172,3 +253,8 @@ The live smoke test validates:
 -   **0 Flows Found:** Verify your label names. Labels must match the exact case and spelling used in the PCE.
 -   **Heatmap looks too large:** Use the source and destination filters or leave `Hide Empty Rows/Cols` enabled.
 -   **Live smoke test cannot connect:** Ensure the local machine has network access to the PCE and that the selected saved profile is still valid.
+-   **A second copy will not start:** The application intentionally permits one process per local user. Stop the existing UI or scheduler process before using `--run-template` or `--scheduler-only` separately.
+-   **Scheduled run was not delivered:** Review `/automation` run history. It records threshold skips and per-destination delivery failures without exposing secrets.
+-   **Webhook rejected as private:** Use HTTPS for public services. Enable private-network access only for an intentional internal webhook target.
+-   **Slack notification arrived without a CSV:** Slack incoming webhooks are notification-only. Configure the Slack App destination for file upload.
+-   **Teams card arrived without a CSV:** Configure base64 mode and add Power Automate actions that decode `file_base64` and create `file_name` in SharePoint or OneDrive.
