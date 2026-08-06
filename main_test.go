@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -802,6 +803,79 @@ func TestCSVImportViewsAllowMultipleFiles(t *testing.T) {
 		}
 		if !strings.Contains(html, "formData.append('files', file)") {
 			t.Fatalf("%s does not submit every selected CSV", page)
+		}
+	}
+}
+
+func TestApplicationHeadersUseConsistentNavigationAndThemeControls(t *testing.T) {
+	t.Parallel()
+
+	pages := []struct {
+		file        string
+		currentHref string
+	}{
+		{"frontend/index.html", "/"},
+		{"frontend/summary.html", "/summary"},
+		{"frontend/heatmaps.html", "/heatmaps"},
+		{"frontend/executive-summary.html", "/executive-summary"},
+		{"frontend/automation.html", "/automation"},
+	}
+	wantNavigation := []string{
+		`href="/" class="app-nav-link"`,
+		`href="/summary" class="app-nav-link"`,
+		`href="/heatmaps" class="app-nav-link"`,
+		`href="/executive-summary" class="app-nav-link"`,
+		`href="/automation" class="app-nav-link"`,
+	}
+
+	for _, page := range pages {
+		content, err := staticFiles.ReadFile(page.file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		html := string(content)
+		headerStart := strings.Index(html, `<header class="app-header`)
+		headerEnd := strings.Index(html, `</header>`)
+		if headerStart < 0 || headerEnd <= headerStart {
+			t.Fatalf("%s is missing the shared application header", page.file)
+		}
+		header := html[headerStart:headerEnd]
+		previousIndex := -1
+		for _, navigation := range wantNavigation {
+			index := strings.Index(header, navigation)
+			if index <= previousIndex {
+				t.Fatalf("%s navigation order is inconsistent at %q", page.file, navigation)
+			}
+			previousIndex = index
+		}
+		currentMarker := fmt.Sprintf(`href="%s" class="app-nav-link" aria-current="page"`, page.currentHref)
+		if strings.Count(header, `aria-current="page"`) != 1 || !strings.Contains(header, currentMarker) {
+			t.Fatalf("%s does not identify %s as the current page", page.file, page.currentHref)
+		}
+		for _, theme := range []string{"default", "illumio", "illumio-light"} {
+			if !strings.Contains(header, fmt.Sprintf(`data-theme-option="%s"`, theme)) {
+				t.Fatalf("%s is missing the %s theme option", page.file, theme)
+			}
+		}
+		if strings.Contains(header, "theme-button active") {
+			t.Fatalf("%s hard-codes a theme as active before saved-theme initialization", page.file)
+		}
+		if !strings.Contains(html, `<link rel="stylesheet" href="/assets/app-shell.css">`) {
+			t.Fatalf("%s does not load the shared header styles", page.file)
+		}
+		themeScript := strings.Index(html, `<script src="/assets/theme-init.js"></script>`)
+		if themeScript < 0 || themeScript > headerStart {
+			t.Fatalf("%s does not initialize the saved theme before rendering its header", page.file)
+		}
+	}
+	shell, err := staticFiles.ReadFile("frontend/app-shell.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	shellCSS := string(shell)
+	for _, rule := range []string{"scrollbar-gutter: stable", ".app-header-action {\n        order: 1", ".app-nav {\n        order: 2", ".theme-switcher {\n        order: 3"} {
+		if !strings.Contains(shellCSS, rule) {
+			t.Fatalf("shared app shell is missing the stable header rule %q", rule)
 		}
 	}
 }

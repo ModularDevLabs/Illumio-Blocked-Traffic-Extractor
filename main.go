@@ -32,7 +32,7 @@ import (
 	"github.com/pkg/browser"
 )
 
-//go:embed frontend/*.html frontend/tailwind.css
+//go:embed frontend/*.html frontend/tailwind.css frontend/app-shell.css frontend/theme-init.js
 var staticFiles embed.FS
 
 type PCEProfile struct {
@@ -114,6 +114,9 @@ type AppState struct {
 	CancelFunc       context.CancelFunc
 	LastSummary      []PortProtocolSummary
 	LastInsights     AnalyticsInsights
+	DatasetID        string
+	DatasetCoverage  DatasetCoverage
+	ReportMetadata   ReportMetadata
 	DiscoveryCache   *DiscoveryData
 	DiscoveryKey     string
 	RunError         string
@@ -182,25 +185,42 @@ type MonthlyPortProtocolSummary struct {
 	ActiveConnections int    `json:"active_connections"`
 }
 
+type MonthlyRelationshipSummary struct {
+	Month             string `json:"month"`
+	Source            string `json:"source"`
+	Destination       string `json:"destination"`
+	FlowCount         int    `json:"flow_count"`
+	UniqueConnections int    `json:"unique_connections"`
+}
+
+type MonthlyDestinationSummary struct {
+	Month             string `json:"month"`
+	Destination       string `json:"destination"`
+	FlowCount         int    `json:"flow_count"`
+	UniqueConnections int    `json:"unique_connections"`
+}
+
 type AnalyticsInsights struct {
-	PrimaryLabelKey           string                        `json:"primary_label_key"`
-	SecondaryLabelKey         string                        `json:"secondary_label_key"`
-	EnvMatrix                 []MatrixSummary               `json:"env_matrix"`
-	AppMatrix                 []MatrixSummary               `json:"app_matrix"`
-	TopSourceEnvs             []TalkerSummary               `json:"top_source_envs"`
-	TopDestinationEnvs        []TalkerSummary               `json:"top_destination_envs"`
-	TopSourceIPs              []TalkerSummary               `json:"top_source_ips"`
-	TopDestinationIPs         []TalkerSummary               `json:"top_destination_ips"`
-	TopExternalDestinationIPs []TalkerSummary               `json:"top_external_destination_ips"`
-	TopAppPairs               []TalkerSummary               `json:"top_app_pairs"`
-	TrafficCategories         []TrafficCategorySummary      `json:"traffic_categories"`
-	EnvServicePivot           []EnvServicePivotSummary      `json:"env_service_pivot"`
-	SourceEnvOptions          []string                      `json:"source_env_options"`
-	AppServicePivot           []AppServicePivotSummary      `json:"app_service_pivot"`
-	SourceAppOptions          []string                      `json:"source_app_options"`
-	CombinedServicePivot      []CombinedServicePivotSummary `json:"combined_service_pivot"`
-	SourceCombinedOptions     []string                      `json:"source_combined_options"`
-	MonthlyPortProtocol       []MonthlyPortProtocolSummary  `json:"monthly_port_protocol"`
+	PrimaryLabelKey             string                        `json:"primary_label_key"`
+	SecondaryLabelKey           string                        `json:"secondary_label_key"`
+	EnvMatrix                   []MatrixSummary               `json:"env_matrix"`
+	AppMatrix                   []MatrixSummary               `json:"app_matrix"`
+	TopSourceEnvs               []TalkerSummary               `json:"top_source_envs"`
+	TopDestinationEnvs          []TalkerSummary               `json:"top_destination_envs"`
+	TopSourceIPs                []TalkerSummary               `json:"top_source_ips"`
+	TopDestinationIPs           []TalkerSummary               `json:"top_destination_ips"`
+	TopExternalDestinationIPs   []TalkerSummary               `json:"top_external_destination_ips"`
+	TopAppPairs                 []TalkerSummary               `json:"top_app_pairs"`
+	TrafficCategories           []TrafficCategorySummary      `json:"traffic_categories"`
+	EnvServicePivot             []EnvServicePivotSummary      `json:"env_service_pivot"`
+	SourceEnvOptions            []string                      `json:"source_env_options"`
+	AppServicePivot             []AppServicePivotSummary      `json:"app_service_pivot"`
+	SourceAppOptions            []string                      `json:"source_app_options"`
+	CombinedServicePivot        []CombinedServicePivotSummary `json:"combined_service_pivot"`
+	SourceCombinedOptions       []string                      `json:"source_combined_options"`
+	MonthlyPortProtocol         []MonthlyPortProtocolSummary  `json:"monthly_port_protocol"`
+	MonthlyRelationships        []MonthlyRelationshipSummary  `json:"monthly_relationships"`
+	MonthlyExternalDestinations []MonthlyDestinationSummary   `json:"monthly_external_destinations"`
 }
 
 type AnalyticsRecord struct {
@@ -679,6 +699,21 @@ func serveEmbeddedHTML(w http.ResponseWriter, fileName string) {
 	_, _ = w.Write(data)
 }
 
+func serveEmbeddedAsset(w http.ResponseWriter, r *http.Request, fileName, contentType string) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	data, err := staticFiles.ReadFile(fileName)
+	if err != nil {
+		http.Error(w, "asset unavailable", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Cache-Control", "no-cache")
+	_, _ = w.Write(data)
+}
+
 func main() {
 	defaultPort := envOrDefault("ITT_PORT", "8080")
 	defaultOpenBrowser := boolEnvOrDefault("ITT_OPEN_BROWSER", true)
@@ -696,6 +731,9 @@ func main() {
 	loadProfiles()
 	if err := automation.load(); err != nil {
 		log.Printf("failed to load automation store: %v", err)
+	}
+	if err := datasetManager.load(); err != nil {
+		log.Printf("failed to load saved datasets: %v", err)
 	}
 	appCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -715,6 +753,9 @@ func main() {
 			log.Fatal(err)
 		}
 		fmt.Printf("Template completed: %s\n", completed.ArtifactPath)
+		for _, artifactPath := range completed.AdditionalArtifactPaths {
+			fmt.Printf("Executive artifact: %s\n", artifactPath)
+		}
 		return
 	}
 
@@ -734,18 +775,13 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/assets/tailwind.css", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		data, err := staticFiles.ReadFile("frontend/tailwind.css")
-		if err != nil {
-			http.Error(w, "asset unavailable", http.StatusInternalServerError)
-			return
-		}
-		w.Header().Set("Content-Type", "text/css; charset=utf-8")
-		w.Header().Set("Cache-Control", "no-cache")
-		_, _ = w.Write(data)
+		serveEmbeddedAsset(w, r, "frontend/tailwind.css", "text/css; charset=utf-8")
+	})
+	mux.HandleFunc("/assets/app-shell.css", func(w http.ResponseWriter, r *http.Request) {
+		serveEmbeddedAsset(w, r, "frontend/app-shell.css", "text/css; charset=utf-8")
+	})
+	mux.HandleFunc("/assets/theme-init.js", func(w http.ResponseWriter, r *http.Request) {
+		serveEmbeddedAsset(w, r, "frontend/theme-init.js", "text/javascript; charset=utf-8")
 	})
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
@@ -796,6 +832,7 @@ func main() {
 	mux.HandleFunc("/api/results/summary", handleSummary)
 	mux.HandleFunc("/api/results/import-csv", handleImportCSV)
 	registerAutomationHandlers(mux)
+	registerDatasetHandlers(mux)
 
 	mux.HandleFunc("/api/profiles/get", func(w http.ResponseWriter, r *http.Request) {
 		if !requireMethod(w, r, http.MethodGet) {
@@ -1334,13 +1371,19 @@ func handleSummary(w http.ResponseWriter, r *http.Request) {
 	fileName := state.FileName
 	summary := state.LastSummary
 	insights := state.LastInsights
+	datasetID := state.DatasetID
+	coverage := state.DatasetCoverage
+	reportMetadata := state.ReportMetadata
 	state.Mu.Unlock()
 
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"success":  fileName != "" && len(summary) > 0,
-		"fileName": fileName,
-		"summary":  summary,
-		"insights": insights,
+		"success":         fileName != "" && len(summary) > 0,
+		"fileName":        fileName,
+		"datasetId":       datasetID,
+		"summary":         summary,
+		"insights":        insights,
+		"coverage":        coverage,
+		"report_metadata": reportMetadata,
 	})
 }
 
@@ -1634,6 +1677,14 @@ func parseCSVAnalytics(reader io.Reader) ([]PortProtocolSummary, AnalyticsInsigh
 type csvAnalyticsInput struct {
 	Name   string
 	Reader io.Reader
+	SHA256 string
+	Size   int64
+}
+
+type parsedAnalyticsDataset struct {
+	Summary  []PortProtocolSummary
+	Insights AnalyticsInsights
+	Coverage DatasetCoverage
 }
 
 func parseCSVAnalyticsWithDimensions(reader io.Reader, primaryLabelKey, secondaryLabelKey string) ([]PortProtocolSummary, AnalyticsInsights, error) {
@@ -1641,20 +1692,47 @@ func parseCSVAnalyticsWithDimensions(reader io.Reader, primaryLabelKey, secondar
 }
 
 func parseCSVAnalyticsInputs(inputs []csvAnalyticsInput, primaryLabelKey, secondaryLabelKey string) ([]PortProtocolSummary, AnalyticsInsights, error) {
+	dataset, err := parseCSVAnalyticsInputsDetailed(inputs, primaryLabelKey, secondaryLabelKey)
+	return dataset.Summary, dataset.Insights, err
+}
+
+func parseCSVAnalyticsInputsDetailed(inputs []csvAnalyticsInput, primaryLabelKey, secondaryLabelKey string) (parsedAnalyticsDataset, error) {
 	primaryLabelKey, secondaryLabelKey, err := normalizeAnalysisLabelKeys(primaryLabelKey, secondaryLabelKey)
 	if err != nil {
-		return nil, AnalyticsInsights{}, err
+		return parsedAnalyticsDataset{}, err
 	}
 	if len(inputs) == 0 {
-		return nil, AnalyticsInsights{}, fmt.Errorf("at least one CSV file is required")
+		return parsedAnalyticsDataset{}, fmt.Errorf("at least one CSV file is required")
 	}
 
 	allRecords := []AnalyticsRecord{}
+	coverage := DatasetCoverage{Source: "csv_import", Files: make([]DatasetFileCoverage, 0, len(inputs))}
 	for _, input := range inputs {
 		records, err := parseCSVAnalyticsRecords(input.Reader, input.Name, primaryLabelKey, secondaryLabelKey)
 		if err != nil {
-			return nil, AnalyticsInsights{}, err
+			return parsedAnalyticsDataset{}, err
 		}
+		fileCoverage := DatasetFileCoverage{Name: input.Name, SHA256: input.SHA256, Size: input.Size, Rows: len(records)}
+		monthSet := map[string]bool{}
+		for _, record := range records {
+			if fileCoverage.FirstDetected.IsZero() || (!record.FirstSeen.IsZero() && record.FirstSeen.Before(fileCoverage.FirstDetected)) {
+				fileCoverage.FirstDetected = record.FirstSeen
+			}
+			if record.LastSeen.After(fileCoverage.LastDetected) {
+				fileCoverage.LastDetected = record.LastSeen
+			}
+			if record.Month != "" {
+				monthSet[record.Month] = true
+			}
+			for _, month := range monthSpan(record.FirstSeen, record.LastSeen) {
+				monthSet[month] = true
+			}
+		}
+		for month := range monthSet {
+			fileCoverage.Months = append(fileCoverage.Months, month)
+		}
+		sort.Strings(fileCoverage.Months)
+		coverage.Files = append(coverage.Files, fileCoverage)
 		allRecords = append(allRecords, records...)
 	}
 
@@ -1664,7 +1742,81 @@ func parseCSVAnalyticsInputs(inputs []csvAnalyticsInput, primaryLabelKey, second
 	// Monthly rows intentionally use the unmerged per-file records so one connection
 	// observed in several monthly exports remains visible in each respective month.
 	insights.MonthlyPortProtocol = monthlyPortProtocolFromRecords(allRecords)
-	return summary, insights, nil
+	insights.MonthlyRelationships, insights.MonthlyExternalDestinations = monthlyDimensionAnalyticsFromRecords(allRecords)
+	return parsedAnalyticsDataset{Summary: summary, Insights: insights, Coverage: normalizeCoverage(coverage)}, nil
+}
+
+func monthlyDimensionAnalyticsFromRecords(records []AnalyticsRecord) ([]MonthlyRelationshipSummary, []MonthlyDestinationSummary) {
+	relationships := map[string]MonthlyRelationshipSummary{}
+	relationshipConnections := map[string]map[string]struct{}{}
+	externalDestinations := map[string]MonthlyDestinationSummary{}
+	externalConnections := map[string]map[string]struct{}{}
+	for index, record := range records {
+		month := strings.TrimSpace(record.Month)
+		if month == "" {
+			continue
+		}
+		identity := record.Identity
+		if identity == "" {
+			identity = fmt.Sprintf("record-%d", index)
+		}
+		relationshipKey := strings.Join([]string{month, record.SrcEnv, record.DstEnv}, "\x1f")
+		relationship := relationships[relationshipKey]
+		relationship.Month = month
+		relationship.Source = record.SrcEnv
+		relationship.Destination = record.DstEnv
+		relationship.FlowCount += record.FlowCount
+		relationships[relationshipKey] = relationship
+		if relationshipConnections[relationshipKey] == nil {
+			relationshipConnections[relationshipKey] = map[string]struct{}{}
+		}
+		relationshipConnections[relationshipKey][identity] = struct{}{}
+
+		if !record.DstManaged {
+			destinationKey := strings.Join([]string{month, record.DstIP}, "\x1f")
+			destination := externalDestinations[destinationKey]
+			destination.Month = month
+			destination.Destination = record.DstIP
+			destination.FlowCount += record.FlowCount
+			externalDestinations[destinationKey] = destination
+			if externalConnections[destinationKey] == nil {
+				externalConnections[destinationKey] = map[string]struct{}{}
+			}
+			externalConnections[destinationKey][identity] = struct{}{}
+		}
+	}
+	relationshipRows := make([]MonthlyRelationshipSummary, 0, len(relationships))
+	for key, row := range relationships {
+		row.UniqueConnections = len(relationshipConnections[key])
+		relationshipRows = append(relationshipRows, row)
+	}
+	sort.Slice(relationshipRows, func(i, j int) bool {
+		if relationshipRows[i].Month != relationshipRows[j].Month {
+			return relationshipRows[i].Month < relationshipRows[j].Month
+		}
+		if relationshipRows[i].FlowCount != relationshipRows[j].FlowCount {
+			return relationshipRows[i].FlowCount > relationshipRows[j].FlowCount
+		}
+		if relationshipRows[i].Source != relationshipRows[j].Source {
+			return relationshipRows[i].Source < relationshipRows[j].Source
+		}
+		return relationshipRows[i].Destination < relationshipRows[j].Destination
+	})
+	externalRows := make([]MonthlyDestinationSummary, 0, len(externalDestinations))
+	for key, row := range externalDestinations {
+		row.UniqueConnections = len(externalConnections[key])
+		externalRows = append(externalRows, row)
+	}
+	sort.Slice(externalRows, func(i, j int) bool {
+		if externalRows[i].Month != externalRows[j].Month {
+			return externalRows[i].Month < externalRows[j].Month
+		}
+		if externalRows[i].FlowCount != externalRows[j].FlowCount {
+			return externalRows[i].FlowCount > externalRows[j].FlowCount
+		}
+		return externalRows[i].Destination < externalRows[j].Destination
+	})
+	return relationshipRows, externalRows
 }
 
 func parseCSVAnalyticsRecords(reader io.Reader, sourceName, primaryLabelKey, secondaryLabelKey string) ([]AnalyticsRecord, error) {
@@ -1973,13 +2125,13 @@ func handleImportCSV(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		openedFiles = append(openedFiles, file)
-		inputs = append(inputs, csvAnalyticsInput{Name: name, Reader: file})
+		inputs = append(inputs, csvAnalyticsInput{Name: name, Reader: file, SHA256: digest, Size: header.Size})
 		fileNames = append(fileNames, name)
 	}
 
 	primaryLabelKey := r.FormValue("primary_label_key")
 	secondaryLabelKey := r.FormValue("secondary_label_key")
-	summary, insights, err := parseCSVAnalyticsInputs(inputs, primaryLabelKey, secondaryLabelKey)
+	parsed, err := parseCSVAnalyticsInputsDetailed(inputs, primaryLabelKey, secondaryLabelKey)
 	if err != nil {
 		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
 		return
@@ -1988,11 +2140,27 @@ func handleImportCSV(w http.ResponseWriter, r *http.Request) {
 	if len(fileNames) > 1 {
 		fileName = fmt.Sprintf("Imported CSV set: %d files", len(fileNames))
 	}
+	reportMetadata := ReportMetadata{Title: "Blocked Traffic Executive Summary"}
+	datasetID := ""
+	if datasetName := strings.TrimSpace(r.FormValue("dataset_name")); datasetName != "" {
+		saved, err := datasetManager.saveDataset(SavedDataset{
+			Name: datasetName, FileName: fileName, Summary: parsed.Summary, Insights: parsed.Insights,
+			Coverage: parsed.Coverage, Report: reportMetadata,
+		})
+		if err != nil {
+			json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
+			return
+		}
+		datasetID = saved.ID
+	}
 
 	state.Mu.Lock()
-	state.LastSummary = summary
-	state.LastInsights = insights
+	state.LastSummary = parsed.Summary
+	state.LastInsights = parsed.Insights
 	state.FileName = fileName
+	state.DatasetID = datasetID
+	state.DatasetCoverage = parsed.Coverage
+	state.ReportMetadata = reportMetadata
 	state.IsDone = true
 	state.IsCancelled = false
 	state.Mu.Unlock()
@@ -2002,6 +2170,8 @@ func handleImportCSV(w http.ResponseWriter, r *http.Request) {
 		"fileName":  fileName,
 		"fileCount": len(fileNames),
 		"files":     fileNames,
+		"datasetId": datasetID,
+		"coverage":  parsed.Coverage,
 	})
 }
 
@@ -2073,6 +2243,9 @@ func beginExtractionWithContext(parent context.Context, cfg Config) (Config, con
 	state.FileName = ""
 	state.LastSummary = nil
 	state.LastInsights = AnalyticsInsights{}
+	state.DatasetID = ""
+	state.DatasetCoverage = DatasetCoverage{}
+	state.ReportMetadata = ReportMetadata{Title: "Blocked Traffic Executive Summary"}
 	state.RunError = ""
 
 	ctx, cancel := context.WithTimeout(parent, maxExtractionTime)
@@ -2851,6 +3024,10 @@ func runExtraction(ctx context.Context, cfg Config) {
 	})
 	monthlySummaryMap := make(map[string]MonthlyPortProtocolSummary)
 	monthlyUniqueConnectionSet := make(map[string]map[FlowKey]struct{})
+	monthlyRelationshipMap := make(map[string]MonthlyRelationshipSummary)
+	monthlyRelationshipSet := make(map[string]map[FlowKey]struct{})
+	monthlyExternalDestinationMap := make(map[string]MonthlyDestinationSummary)
+	monthlyExternalDestinationSet := make(map[string]map[FlowKey]struct{})
 	var aggMu sync.Mutex
 	protoMap := map[int]string{1: "ICMP", 2: "IGMP", 6: "TCP", 17: "UDP", 47: "GRE", 50: "ESP", 51: "AH", 58: "ICMPv6", 89: "OSPF", 112: "VRRP", 132: "SCTP"}
 
@@ -2950,6 +3127,34 @@ func runExtraction(ctx context.Context, cfg Config) {
 									monthlyUniqueConnectionSet[summaryKey] = set
 								}
 								set[key] = struct{}{}
+
+								sourcePrimary := externalOrManagedLabel(f, true, primaryLabelKey)
+								destinationPrimary := externalOrManagedLabel(f, false, primaryLabelKey)
+								relationshipKey := strings.Join([]string{monthKey, sourcePrimary, destinationPrimary}, "\x1f")
+								relationship := monthlyRelationshipMap[relationshipKey]
+								relationship.Month = monthKey
+								relationship.Source = sourcePrimary
+								relationship.Destination = destinationPrimary
+								relationship.FlowCount += f.NumConnections
+								monthlyRelationshipMap[relationshipKey] = relationship
+								if monthlyRelationshipSet[relationshipKey] == nil {
+									monthlyRelationshipSet[relationshipKey] = map[FlowKey]struct{}{}
+								}
+								monthlyRelationshipSet[relationshipKey][key] = struct{}{}
+
+								if !endpointHasClassification(f, false) {
+									destinationName := endpointDisplayName(f, false)
+									destinationKey := strings.Join([]string{monthKey, destinationName}, "\x1f")
+									destination := monthlyExternalDestinationMap[destinationKey]
+									destination.Month = monthKey
+									destination.Destination = destinationName
+									destination.FlowCount += f.NumConnections
+									monthlyExternalDestinationMap[destinationKey] = destination
+									if monthlyExternalDestinationSet[destinationKey] == nil {
+										monthlyExternalDestinationSet[destinationKey] = map[FlowKey]struct{}{}
+									}
+									monthlyExternalDestinationSet[destinationKey][key] = struct{}{}
+								}
 							}
 						}
 						state.Mu.Lock()
@@ -3177,10 +3382,45 @@ func runExtraction(ctx context.Context, cfg Config) {
 
 	insights := buildInsightsForDimensions(analyticsRecords, primaryLabelKey, secondaryLabelKey)
 	insights.MonthlyPortProtocol = monthlySummaries
+	for key, row := range monthlyRelationshipMap {
+		row.UniqueConnections = len(monthlyRelationshipSet[key])
+		insights.MonthlyRelationships = append(insights.MonthlyRelationships, row)
+	}
+	sort.Slice(insights.MonthlyRelationships, func(i, j int) bool {
+		if insights.MonthlyRelationships[i].Month != insights.MonthlyRelationships[j].Month {
+			return insights.MonthlyRelationships[i].Month < insights.MonthlyRelationships[j].Month
+		}
+		if insights.MonthlyRelationships[i].FlowCount != insights.MonthlyRelationships[j].FlowCount {
+			return insights.MonthlyRelationships[i].FlowCount > insights.MonthlyRelationships[j].FlowCount
+		}
+		return insights.MonthlyRelationships[i].Source+insights.MonthlyRelationships[i].Destination < insights.MonthlyRelationships[j].Source+insights.MonthlyRelationships[j].Destination
+	})
+	for key, row := range monthlyExternalDestinationMap {
+		row.UniqueConnections = len(monthlyExternalDestinationSet[key])
+		insights.MonthlyExternalDestinations = append(insights.MonthlyExternalDestinations, row)
+	}
+	sort.Slice(insights.MonthlyExternalDestinations, func(i, j int) bool {
+		if insights.MonthlyExternalDestinations[i].Month != insights.MonthlyExternalDestinations[j].Month {
+			return insights.MonthlyExternalDestinations[i].Month < insights.MonthlyExternalDestinations[j].Month
+		}
+		if insights.MonthlyExternalDestinations[i].FlowCount != insights.MonthlyExternalDestinations[j].FlowCount {
+			return insights.MonthlyExternalDestinations[i].FlowCount > insights.MonthlyExternalDestinations[j].FlowCount
+		}
+		return insights.MonthlyExternalDestinations[i].Destination < insights.MonthlyExternalDestinations[j].Destination
+	})
+	coverageEnd := rangeEnd.Add(24*time.Hour - time.Second)
+	coverage := normalizeCoverage(DatasetCoverage{Source: "live_extraction", Files: []DatasetFileCoverage{{
+		Name: filepath.Base(finalPath), Rows: len(aggregatedFlows), FirstDetected: rangeStart, LastDetected: coverageEnd,
+		Months: monthSpan(rangeStart, coverageEnd),
+	}}})
+	if info, err := os.Stat(finalPath); err == nil {
+		coverage.Files[0].Size = info.Size()
+	}
 
 	state.Mu.Lock()
 	state.LastSummary = summary
 	state.LastInsights = insights
+	state.DatasetCoverage = coverage
 	state.Mu.Unlock()
 
 	outputComplete = true

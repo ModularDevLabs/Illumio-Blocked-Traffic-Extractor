@@ -37,12 +37,13 @@ const (
 )
 
 type deliveryMessage struct {
-	RunID        string
-	Title        string
-	Text         string
-	ArtifactPath string
-	Failed       bool
-	Metrics      RunMetrics
+	RunID                   string
+	Title                   string
+	Text                    string
+	ArtifactPath            string
+	AdditionalArtifactPaths []string
+	Failed                  bool
+	Metrics                 RunMetrics
 }
 
 func (manager *AutomationManager) saveDestination(destination DeliveryDestination) (DeliveryDestination, error) {
@@ -318,7 +319,7 @@ func outboundHTTPClient(destination DeliveryDestination) (*http.Client, error) {
 	return client, nil
 }
 
-func (manager *AutomationManager) deliverCompletedRun(ctx context.Context, runID string, template ReportTemplate, artifactPath string, metrics RunMetrics) {
+func (manager *AutomationManager) deliverCompletedRun(ctx context.Context, runID string, template ReportTemplate, artifactPath string, additionalArtifactPaths []string, metrics RunMetrics) {
 	manager.mu.Lock()
 	index := manager.runIndexLocked(runID)
 	trigger := "schedule"
@@ -341,7 +342,7 @@ func (manager *AutomationManager) deliverCompletedRun(ctx context.Context, runID
 		RunID: runID, Title: template.Name + " completed",
 		Text: fmt.Sprintf("%s completed with %d blocked flows across %d unique connections. External/unmanaged flows: %d. New relationships: %d. New services: %d.",
 			template.Name, metrics.TotalFlows, metrics.UniqueConnections, metrics.ExternalFlows, len(metrics.NewRelationships), len(metrics.NewServices)),
-		ArtifactPath: artifactPath, Metrics: metrics,
+		ArtifactPath: artifactPath, AdditionalArtifactPaths: additionalArtifactPaths, Metrics: metrics,
 	}
 	manager.deliverToTemplateDestinations(ctx, runID, template, message)
 }
@@ -366,23 +367,7 @@ func (manager *AutomationManager) deliverToTemplateDestinations(parent context.C
 	results := make([]DeliveryResult, 0, len(destinations))
 	for _, destination := range destinations {
 		result := DeliveryResult{DestinationID: destination.ID, DestinationName: destination.Name, AttemptedAt: time.Now().UTC()}
-		var err error
-		for attempt := 1; attempt <= deliveryAttempts; attempt++ {
-			ctx, cancel := context.WithTimeout(parent, deliveryTimeout)
-			err = deliverMessage(ctx, destination, message)
-			cancel()
-			if err == nil {
-				break
-			}
-			if attempt < deliveryAttempts {
-				select {
-				case <-parent.Done():
-					err = parent.Err()
-					attempt = deliveryAttempts
-				case <-time.After(time.Duration(attempt) * time.Second):
-				}
-			}
-		}
+		err := deliverMessageArtifacts(parent, destination, message)
 		result.Success = err == nil
 		if err != nil {
 			result.Message = redactDeliveryError(err.Error(), destination)
@@ -398,6 +383,61 @@ func (manager *AutomationManager) deliverToTemplateDestinations(parent context.C
 		_ = manager.saveLocked()
 	}
 	manager.mu.Unlock()
+}
+
+func deliverMessageArtifacts(parent context.Context, destination DeliveryDestination, message deliveryMessage) error {
+	paths := make([]string, 0, 1+len(message.AdditionalArtifactPaths))
+	if message.ArtifactPath != "" {
+		paths = append(paths, message.ArtifactPath)
+	}
+	paths = append(paths, message.AdditionalArtifactPaths...)
+	if len(paths) == 0 {
+		return deliverMessageWithRetries(parent, destination, message)
+	}
+	fileCapable := destination.Type == "slack_api" || destination.Type == "email" || destination.Type == "shared_folder" || destination.Type == "sftp" ||
+		((destination.Type == "generic_webhook" || destination.Type == "teams_workflow") && (destination.WebhookMode == "multipart" || destination.WebhookMode == "base64_file"))
+	if !fileCapable {
+		names := make([]string, 0, len(paths))
+		for _, path := range paths {
+			names = append(names, filepath.Base(path))
+		}
+		message.Text += " Generated artifacts: " + strings.Join(names, ", ") + "."
+		message.AdditionalArtifactPaths = nil
+		return deliverMessageWithRetries(parent, destination, message)
+	}
+	for index, path := range paths {
+		artifactMessage := message
+		artifactMessage.ArtifactPath = path
+		artifactMessage.AdditionalArtifactPaths = nil
+		if index > 0 {
+			artifactMessage.Title = message.Title + " — " + strings.ToUpper(strings.TrimPrefix(filepath.Ext(path), ".")) + " report"
+			artifactMessage.Text = message.Text + " Artifact: " + filepath.Base(path) + "."
+		}
+		if err := deliverMessageWithRetries(parent, destination, artifactMessage); err != nil {
+			return fmt.Errorf("deliver %s: %w", filepath.Base(path), err)
+		}
+	}
+	return nil
+}
+
+func deliverMessageWithRetries(parent context.Context, destination DeliveryDestination, message deliveryMessage) error {
+	var err error
+	for attempt := 1; attempt <= deliveryAttempts; attempt++ {
+		ctx, cancel := context.WithTimeout(parent, deliveryTimeout)
+		err = deliverMessage(ctx, destination, message)
+		cancel()
+		if err == nil {
+			return nil
+		}
+		if attempt < deliveryAttempts {
+			select {
+			case <-parent.Done():
+				return parent.Err()
+			case <-time.After(time.Duration(attempt) * time.Second):
+			}
+		}
+	}
+	return err
 }
 
 func redactDeliveryError(message string, destination DeliveryDestination) string {
@@ -459,6 +499,19 @@ func artifactData(message deliveryMessage) ([]byte, string, error) {
 	return data, filepath.Base(message.ArtifactPath), nil
 }
 
+func artifactContentType(name string) string {
+	switch strings.ToLower(filepath.Ext(name)) {
+	case ".csv":
+		return "text/csv; charset=utf-8"
+	case ".html", ".htm":
+		return "text/html; charset=utf-8"
+	case ".pdf":
+		return "application/pdf"
+	default:
+		return "application/octet-stream"
+	}
+}
+
 func webhookPayload(message deliveryMessage, includeFile bool) (map[string]any, error) {
 	payload := map[string]any{
 		"event": "report.completed", "run_id": message.RunID, "title": message.Title, "text": message.Text,
@@ -505,7 +558,7 @@ func deliverGenericWebhook(ctx context.Context, destination DeliveryDestination,
 		_ = writer.WriteField("metadata", string(metadata))
 		partHeader := textproto.MIMEHeader{}
 		partHeader.Set("Content-Disposition", fmt.Sprintf(`form-data; name="file"; filename=%q`, name))
-		partHeader.Set("Content-Type", "text/csv")
+		partHeader.Set("Content-Type", artifactContentType(name))
 		part, err := writer.CreatePart(partHeader)
 		if err != nil {
 			return err
@@ -700,7 +753,7 @@ func buildEmailMessage(destination DeliveryDestination, message deliveryMessage)
 		if err != nil {
 			return nil, err
 		}
-		fmt.Fprintf(buffer, "--%s\r\nContent-Type: text/csv\r\nContent-Disposition: attachment; filename=%q\r\nContent-Transfer-Encoding: base64\r\n\r\n", boundary, name)
+		fmt.Fprintf(buffer, "--%s\r\nContent-Type: %s\r\nContent-Disposition: attachment; filename=%q\r\nContent-Transfer-Encoding: base64\r\n\r\n", boundary, artifactContentType(name), name)
 		encoded := base64.StdEncoding.EncodeToString(data)
 		for len(encoded) > 76 {
 			fmt.Fprintf(buffer, "%s\r\n", encoded[:76])
