@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"embed"
 	"encoding/base64"
 	"encoding/csv"
@@ -12,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"mime/multipart"
 	"net"
 	"net/http"
 	"net/url"
@@ -202,21 +204,23 @@ type AnalyticsInsights struct {
 }
 
 type AnalyticsRecord struct {
-	SrcEnv     string
-	DstEnv     string
-	SrcApp     string
-	DstApp     string
-	SrcIP      string
-	DstIP      string
-	DstFQDN    string
-	SrcManaged bool
-	DstManaged bool
-	Protocol   string
-	Port       int
-	Month      string
-	FlowCount  int
-	FirstSeen  time.Time
-	LastSeen   time.Time
+	Identity       string
+	SrcEnv         string
+	DstEnv         string
+	SrcApp         string
+	DstApp         string
+	SrcIP          string
+	DstIP          string
+	DstFQDN        string
+	SrcManaged     bool
+	DstManaged     bool
+	Protocol       string
+	ProtocolNumber int
+	Port           int
+	Month          string
+	FlowCount      int
+	FirstSeen      time.Time
+	LastSeen       time.Time
 }
 
 type DiscoveryData struct {
@@ -238,6 +242,7 @@ const (
 	appConfigDirName    = "illumio-blocked-traffic-extractor"
 	maxJSONRequestSize  = 1 << 20
 	maxCSVUploadSize    = 64 << 20
+	maxCSVUploadFiles   = 60
 	maxExtractionTime   = 24 * time.Hour
 	maxChunkQueryTime   = 30 * time.Minute
 	maxChunkAttempts    = 3
@@ -1404,7 +1409,7 @@ func parseCSVMonthBucket(row []string, getValue func([]string, string) string) s
 		if candidate == "" {
 			continue
 		}
-		if ts, err := time.Parse("2006-01-02 15:04:05", candidate); err == nil {
+		if ts := parseCSVTimestamp(candidate); !ts.IsZero() {
 			return monthBucketFromTime(ts)
 		}
 	}
@@ -1416,11 +1421,18 @@ func parseCSVTimestamp(value string) time.Time {
 	if value == "" {
 		return time.Time{}
 	}
-	ts, err := time.Parse("2006-01-02 15:04:05", value)
-	if err != nil {
-		return time.Time{}
+	for _, layout := range []string{
+		"2006-01-02 15:04:05",
+		time.RFC3339,
+		"01/02/06 03:04 PM",
+		"01/02/2006 03:04 PM",
+	} {
+		ts, err := time.Parse(layout, value)
+		if err == nil {
+			return ts.UTC()
+		}
 	}
-	return ts.UTC()
+	return time.Time{}
 }
 
 func monthSpan(start, end time.Time) []string {
@@ -1558,7 +1570,13 @@ func buildExtractionChunks(start, end time.Time, interval time.Duration) []extra
 
 func monthlyPortProtocolFromRecords(records []AnalyticsRecord) []MonthlyPortProtocolSummary {
 	items := make(map[string]MonthlyPortProtocolSummary)
-	for _, record := range records {
+	observedConnections := make(map[string]map[string]struct{})
+	activeConnections := make(map[string]map[string]struct{})
+	for index, record := range records {
+		identity := record.Identity
+		if identity == "" {
+			identity = fmt.Sprintf("record-%d", index)
+		}
 		month := strings.TrimSpace(record.Month)
 		if month != "" {
 			key := fmt.Sprintf("%s|%s|%d", month, record.Protocol, record.Port)
@@ -1567,8 +1585,11 @@ func monthlyPortProtocolFromRecords(records []AnalyticsRecord) []MonthlyPortProt
 			entry.Protocol = record.Protocol
 			entry.Port = record.Port
 			entry.FlowCount += record.FlowCount
-			entry.UniqueConnections++
 			items[key] = entry
+			if observedConnections[key] == nil {
+				observedConnections[key] = make(map[string]struct{})
+			}
+			observedConnections[key][identity] = struct{}{}
 		}
 
 		for _, activeMonth := range monthSpan(record.FirstSeen, record.LastSeen) {
@@ -1577,13 +1598,18 @@ func monthlyPortProtocolFromRecords(records []AnalyticsRecord) []MonthlyPortProt
 			entry.Month = activeMonth
 			entry.Protocol = record.Protocol
 			entry.Port = record.Port
-			entry.ActiveConnections++
 			items[key] = entry
+			if activeConnections[key] == nil {
+				activeConnections[key] = make(map[string]struct{})
+			}
+			activeConnections[key][identity] = struct{}{}
 		}
 	}
 
 	results := make([]MonthlyPortProtocolSummary, 0, len(items))
-	for _, item := range items {
+	for key, item := range items {
+		item.UniqueConnections = len(observedConnections[key])
+		item.ActiveConnections = len(activeConnections[key])
 		results = append(results, item)
 	}
 	sort.Slice(results, func(i, j int) bool {
@@ -1605,18 +1631,50 @@ func parseCSVAnalytics(reader io.Reader) ([]PortProtocolSummary, AnalyticsInsigh
 	return parseCSVAnalyticsWithDimensions(reader, "env", "app")
 }
 
+type csvAnalyticsInput struct {
+	Name   string
+	Reader io.Reader
+}
+
 func parseCSVAnalyticsWithDimensions(reader io.Reader, primaryLabelKey, secondaryLabelKey string) ([]PortProtocolSummary, AnalyticsInsights, error) {
+	return parseCSVAnalyticsInputs([]csvAnalyticsInput{{Name: "CSV", Reader: reader}}, primaryLabelKey, secondaryLabelKey)
+}
+
+func parseCSVAnalyticsInputs(inputs []csvAnalyticsInput, primaryLabelKey, secondaryLabelKey string) ([]PortProtocolSummary, AnalyticsInsights, error) {
 	primaryLabelKey, secondaryLabelKey, err := normalizeAnalysisLabelKeys(primaryLabelKey, secondaryLabelKey)
 	if err != nil {
 		return nil, AnalyticsInsights{}, err
 	}
+	if len(inputs) == 0 {
+		return nil, AnalyticsInsights{}, fmt.Errorf("at least one CSV file is required")
+	}
+
+	allRecords := []AnalyticsRecord{}
+	for _, input := range inputs {
+		records, err := parseCSVAnalyticsRecords(input.Reader, input.Name, primaryLabelKey, secondaryLabelKey)
+		if err != nil {
+			return nil, AnalyticsInsights{}, err
+		}
+		allRecords = append(allRecords, records...)
+	}
+
+	mergedRecords := mergeImportedAnalyticsRecords(allRecords)
+	summary := portProtocolSummaryFromRecords(mergedRecords)
+	insights := buildInsightsForDimensions(mergedRecords, primaryLabelKey, secondaryLabelKey)
+	// Monthly rows intentionally use the unmerged per-file records so one connection
+	// observed in several monthly exports remains visible in each respective month.
+	insights.MonthlyPortProtocol = monthlyPortProtocolFromRecords(allRecords)
+	return summary, insights, nil
+}
+
+func parseCSVAnalyticsRecords(reader io.Reader, sourceName, primaryLabelKey, secondaryLabelKey string) ([]AnalyticsRecord, error) {
 	csvReader := csv.NewReader(reader)
 	rows, err := csvReader.ReadAll()
 	if err != nil {
-		return nil, AnalyticsInsights{}, err
+		return nil, fmt.Errorf("%s: %w", sourceName, err)
 	}
 	if len(rows) < 1 {
-		return nil, AnalyticsInsights{}, fmt.Errorf("CSV is empty")
+		return nil, fmt.Errorf("%s is empty", sourceName)
 	}
 
 	headerIndex := make(map[string]int)
@@ -1644,7 +1702,7 @@ func parseCSVAnalyticsWithDimensions(reader io.Reader, primaryLabelKey, secondar
 	}
 	for _, header := range requiredHeaders {
 		if _, ok := headerIndex[strings.ToLower(header)]; !ok {
-			return nil, AnalyticsInsights{}, fmt.Errorf("CSV is missing required header: %s", header)
+			return nil, fmt.Errorf("%s is missing required header: %s", sourceName, header)
 		}
 	}
 
@@ -1656,7 +1714,6 @@ func parseCSVAnalyticsWithDimensions(reader io.Reader, primaryLabelKey, secondar
 		return normalizeImportedCSVCell(row[index])
 	}
 
-	summary := []PortProtocolSummary{}
 	records := []AnalyticsRecord{}
 	for rowIndex, row := range rows[1:] {
 		if len(row) == 0 {
@@ -1665,15 +1722,15 @@ func parseCSVAnalyticsWithDimensions(reader io.Reader, primaryLabelKey, secondar
 
 		flowCount, err := strconv.Atoi(getValue(row, "Flows"))
 		if err != nil || flowCount < 0 {
-			return nil, AnalyticsInsights{}, fmt.Errorf("CSV row %d has an invalid Flows value", rowIndex+2)
+			return nil, fmt.Errorf("%s row %d has an invalid Flows value", sourceName, rowIndex+2)
 		}
 		port, err := strconv.Atoi(getValue(row, "Port"))
 		if err != nil || port < 0 || port > 65535 {
-			return nil, AnalyticsInsights{}, fmt.Errorf("CSV row %d has an invalid Port value", rowIndex+2)
+			return nil, fmt.Errorf("%s row %d has an invalid Port value", sourceName, rowIndex+2)
 		}
 		protocol := getValue(row, "Protocol")
 		if protocol == "" {
-			return nil, AnalyticsInsights{}, fmt.Errorf("CSV row %d has an empty Protocol value", rowIndex+2)
+			return nil, fmt.Errorf("%s row %d has an empty Protocol value", sourceName, rowIndex+2)
 		}
 		protoNumber := protocolNumberFromName(protocol)
 		if protoNumber == 0 {
@@ -1732,46 +1789,94 @@ func parseCSVAnalyticsWithDimensions(reader io.Reader, primaryLabelKey, secondar
 		firstSeen := parseCSVTimestamp(firstSeenRaw)
 		lastSeen := parseCSVTimestamp(lastSeenRaw)
 		if firstSeenRaw != "" && firstSeen.IsZero() {
-			return nil, AnalyticsInsights{}, fmt.Errorf("CSV row %d has an invalid First Detected timestamp", rowIndex+2)
+			return nil, fmt.Errorf("%s row %d has an invalid First Detected timestamp", sourceName, rowIndex+2)
 		}
 		if lastSeenRaw != "" && lastSeen.IsZero() {
-			return nil, AnalyticsInsights{}, fmt.Errorf("CSV row %d has an invalid Last Detected timestamp", rowIndex+2)
+			return nil, fmt.Errorf("%s row %d has an invalid Last Detected timestamp", sourceName, rowIndex+2)
 		}
 
-		summary = append(summary, PortProtocolSummary{
-			Port:              port,
-			Protocol:          protocol,
-			ProtocolNumber:    protoNumber,
-			FlowCount:         flowCount,
-			UniqueConnections: 1,
-		})
 		records = append(records, AnalyticsRecord{
-			SrcEnv:     srcEnv,
-			DstEnv:     dstEnv,
-			SrcApp:     srcApp,
-			DstApp:     dstApp,
-			SrcIP:      getValue(row, "Source IP"),
-			DstIP:      dstEndpoint,
-			SrcManaged: sourceManaged,
-			DstManaged: destinationManaged,
-			Protocol:   protocol,
-			Port:       port,
-			Month:      parseCSVMonthBucket(row, getValue),
-			FlowCount:  flowCount,
-			FirstSeen:  firstSeen,
-			LastSeen:   lastSeen,
+			Identity:       importedCSVConnectionIdentity(row, getValue, sourceLabelHeaders, destinationLabelHeaders),
+			SrcEnv:         srcEnv,
+			DstEnv:         dstEnv,
+			SrcApp:         srcApp,
+			DstApp:         dstApp,
+			SrcIP:          getValue(row, "Source IP"),
+			DstIP:          dstEndpoint,
+			SrcManaged:     sourceManaged,
+			DstManaged:     destinationManaged,
+			Protocol:       protocol,
+			ProtocolNumber: protoNumber,
+			Port:           port,
+			Month:          parseCSVMonthBucket(row, getValue),
+			FlowCount:      flowCount,
+			FirstSeen:      firstSeen,
+			LastSeen:       lastSeen,
 		})
 	}
+	return records, nil
+}
 
+func importedCSVConnectionIdentity(row []string, getValue func([]string, string) string, sourceLabelHeaders, destinationLabelHeaders []string) string {
+	parts := []string{
+		"src_ip=" + getValue(row, "Source IP"),
+		"dst_ip=" + getValue(row, "Destination IP"),
+		"fqdn=" + getValue(row, "FQDN"),
+		"port=" + getValue(row, "Port"),
+		"protocol=" + strings.ToUpper(getValue(row, "Protocol")),
+		"process=" + getValue(row, "Process Name"),
+	}
+	labelHeaders := append([]string{}, sourceLabelHeaders...)
+	labelHeaders = append(labelHeaders, destinationLabelHeaders...)
+	sort.Slice(labelHeaders, func(i, j int) bool { return strings.ToLower(labelHeaders[i]) < strings.ToLower(labelHeaders[j]) })
+	for _, header := range labelHeaders {
+		if value := getValue(row, header); value != "" {
+			parts = append(parts, strings.ToLower(header)+"="+value)
+		}
+	}
+	return strings.Join(parts, "\x1f")
+}
+
+func mergeImportedAnalyticsRecords(records []AnalyticsRecord) []AnalyticsRecord {
+	merged := make(map[string]AnalyticsRecord, len(records))
+	order := make([]string, 0, len(records))
+	for index, record := range records {
+		key := record.Identity
+		if key == "" {
+			key = fmt.Sprintf("record-%d", index)
+		}
+		existing, ok := merged[key]
+		if !ok {
+			merged[key] = record
+			order = append(order, key)
+			continue
+		}
+		existing.FlowCount += record.FlowCount
+		if existing.FirstSeen.IsZero() || (!record.FirstSeen.IsZero() && record.FirstSeen.Before(existing.FirstSeen)) {
+			existing.FirstSeen = record.FirstSeen
+		}
+		if record.LastSeen.After(existing.LastSeen) {
+			existing.LastSeen = record.LastSeen
+		}
+		merged[key] = existing
+	}
+	result := make([]AnalyticsRecord, 0, len(order))
+	for _, key := range order {
+		result = append(result, merged[key])
+	}
+	return result
+}
+
+func portProtocolSummaryFromRecords(records []AnalyticsRecord) []PortProtocolSummary {
 	portSummaryMap := make(map[string]PortProtocolSummary)
-	for _, item := range summary {
-		key := fmt.Sprintf("%s:%d", item.Protocol, item.Port)
+	for _, record := range records {
+		key := fmt.Sprintf("%s:%d", record.Protocol, record.Port)
 		entry := portSummaryMap[key]
-		entry.Port = item.Port
-		entry.Protocol = item.Protocol
-		entry.ProtocolNumber = item.ProtocolNumber
-		entry.FlowCount += item.FlowCount
-		entry.UniqueConnections += item.UniqueConnections
+		entry.Port = record.Port
+		entry.Protocol = record.Protocol
+		entry.ProtocolNumber = record.ProtocolNumber
+		entry.FlowCount += record.FlowCount
+		entry.UniqueConnections++
 		portSummaryMap[key] = entry
 	}
 
@@ -1789,9 +1894,7 @@ func parseCSVAnalyticsWithDimensions(reader io.Reader, primaryLabelKey, secondar
 		return finalSummary[i].Protocol < finalSummary[j].Protocol
 	})
 
-	insights := buildInsightsForDimensions(records, primaryLabelKey, secondaryLabelKey)
-	insights.MonthlyPortProtocol = monthlyPortProtocolFromRecords(records)
-	return finalSummary, insights, nil
+	return finalSummary
 }
 
 func handleImportCSV(w http.ResponseWriter, r *http.Request) {
@@ -1814,35 +1917,91 @@ func handleImportCSV(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.MultipartForm != nil {
 		defer r.MultipartForm.RemoveAll()
-	}
-
-	file, header, err := r.FormFile("file")
-	if err != nil {
-		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "CSV file is required"})
+	} else {
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "multipart CSV upload is required"})
 		return
 	}
-	defer file.Close()
+
+	fileHeaders := append([]*multipart.FileHeader{}, r.MultipartForm.File["files"]...)
+	// Keep accepting the original single-file field for API compatibility.
+	fileHeaders = append(fileHeaders, r.MultipartForm.File["file"]...)
+	if len(fileHeaders) == 0 {
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "at least one CSV file is required"})
+		return
+	}
+	if len(fileHeaders) > maxCSVUploadFiles {
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": fmt.Sprintf("select no more than %d CSV files", maxCSVUploadFiles)})
+		return
+	}
+
+	inputs := make([]csvAnalyticsInput, 0, len(fileHeaders))
+	openedFiles := []multipart.File{}
+	defer func() {
+		for _, file := range openedFiles {
+			_ = file.Close()
+		}
+	}()
+	seenDigests := make(map[string]string, len(fileHeaders))
+	fileNames := make([]string, 0, len(fileHeaders))
+	for _, header := range fileHeaders {
+		name := filepath.Base(strings.TrimSpace(header.Filename))
+		if name == "." || name == "" {
+			name = "unnamed.csv"
+		}
+		hashFile, err := header.Open()
+		if err != nil {
+			json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": fmt.Sprintf("open %s: %v", name, err)})
+			return
+		}
+		hasher := sha256.New()
+		_, hashErr := io.Copy(hasher, hashFile)
+		_ = hashFile.Close()
+		if hashErr != nil {
+			json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": fmt.Sprintf("read %s: %v", name, hashErr)})
+			return
+		}
+		digest := fmt.Sprintf("%x", hasher.Sum(nil))
+		if duplicateName, duplicate := seenDigests[digest]; duplicate {
+			json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": fmt.Sprintf("%s duplicates the contents of %s", name, duplicateName)})
+			return
+		}
+		seenDigests[digest] = name
+
+		file, err := header.Open()
+		if err != nil {
+			json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": fmt.Sprintf("open %s: %v", name, err)})
+			return
+		}
+		openedFiles = append(openedFiles, file)
+		inputs = append(inputs, csvAnalyticsInput{Name: name, Reader: file})
+		fileNames = append(fileNames, name)
+	}
 
 	primaryLabelKey := r.FormValue("primary_label_key")
 	secondaryLabelKey := r.FormValue("secondary_label_key")
-	summary, insights, err := parseCSVAnalyticsWithDimensions(file, primaryLabelKey, secondaryLabelKey)
+	summary, insights, err := parseCSVAnalyticsInputs(inputs, primaryLabelKey, secondaryLabelKey)
 	if err != nil {
 		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
 		return
+	}
+	fileName := "Imported CSV: " + fileNames[0]
+	if len(fileNames) > 1 {
+		fileName = fmt.Sprintf("Imported CSV set: %d files", len(fileNames))
 	}
 
 	state.Mu.Lock()
 	state.LastSummary = summary
 	state.LastInsights = insights
-	state.FileName = "Imported CSV: " + header.Filename
+	state.FileName = fileName
 	state.IsDone = true
 	state.IsCancelled = false
-	fileName := state.FileName
 	state.Mu.Unlock()
 
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"success":  true,
-		"fileName": fileName,
+		"success":   true,
+		"fileName":  fileName,
+		"fileCount": len(fileNames),
+		"files":     fileNames,
 	})
 }
 
