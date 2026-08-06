@@ -316,14 +316,16 @@ func TestRetentionOnlyRemovesTrackedFilesInsideOutputFolder(t *testing.T) {
 	outside := filepath.Join(t.TempDir(), "outside.csv")
 	newest := filepath.Join(output, "newest.csv")
 	old := filepath.Join(output, "old.csv")
-	for _, path := range []string{outside, newest, old} {
+	oldHTML := filepath.Join(output, "old-executive.html")
+	oldPDF := filepath.Join(output, "old-executive.pdf")
+	for _, path := range []string{outside, newest, old, oldHTML, oldPDF} {
 		if err := os.WriteFile(path, []byte("data"), 0600); err != nil {
 			t.Fatal(err)
 		}
 	}
 	manager := &AutomationManager{data: automationStoreData{Runs: []AutomationRun{
 		{ID: "new", TemplateID: "tpl", Status: "completed", ArtifactPath: newest},
-		{ID: "old", TemplateID: "tpl", Status: "completed", ArtifactPath: old},
+		{ID: "old", TemplateID: "tpl", Status: "completed", ArtifactPath: old, AdditionalArtifactPaths: []string{oldHTML, oldPDF}},
 		{ID: "outside", TemplateID: "tpl", Status: "completed", ArtifactPath: outside},
 	}}}
 	manager.applyRetention(ReportTemplate{ID: "tpl", SavePath: output, RetentionCount: 1})
@@ -332,6 +334,11 @@ func TestRetentionOnlyRemovesTrackedFilesInsideOutputFolder(t *testing.T) {
 	}
 	if _, err := os.Stat(old); !os.IsNotExist(err) {
 		t.Fatalf("old report should be removed, stat error = %v", err)
+	}
+	for _, path := range []string{oldHTML, oldPDF} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("old executive artifact %s should be removed, stat error = %v", path, err)
+		}
 	}
 	if _, err := os.Stat(outside); err != nil {
 		t.Fatalf("outside report must remain: %v", err)
@@ -473,6 +480,48 @@ func TestAutomationUsesExtractorThemePalette(t *testing.T) {
 			if indexOK != automationOK || indexValue != automationValue {
 				t.Errorf("%s --%s = %q, want extractor value %q", selector, variable, automationValue, indexValue)
 			}
+		}
+	}
+}
+
+func TestScheduledExecutiveArtifactsAreValidAndPrivate(t *testing.T) {
+	t.Parallel()
+	directory := t.TempDir()
+	csvPath := filepath.Join(directory, "monthly.csv")
+	if err := os.WriteFile(csvPath, []byte("header\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	template := ReportTemplate{
+		Name: "Monthly Review", GenerateExecutiveHTML: true, GenerateExecutivePDF: true,
+		ReportCustomer: "Example Customer", ReportPreparedBy: "Security Team", ReportNotes: "Review new services.",
+	}
+	summary := []PortProtocolSummary{{Protocol: "tcp", Port: 443, FlowCount: 1250, UniqueConnections: 17}}
+	insights := AnalyticsInsights{
+		MonthlyPortProtocol: []MonthlyPortProtocolSummary{{Month: "2026-07", Protocol: "tcp", Port: 443, FlowCount: 500, UniqueConnections: 8}, {Month: "2026-08", Protocol: "tcp", Port: 443, FlowCount: 750, UniqueConnections: 9}},
+		EnvMatrix:           []MatrixSummary{{Source: "Production", Destination: "Shared Services", FlowCount: 700}},
+	}
+	paths, err := generateScheduledExecutiveArtifacts(csvPath, template, summary, insights, DatasetCoverage{})
+	if err != nil {
+		t.Fatalf("generateScheduledExecutiveArtifacts: %v", err)
+	}
+	if len(paths) != 2 {
+		t.Fatalf("artifact paths = %#v, want HTML and PDF", paths)
+	}
+	htmlData, err := os.ReadFile(paths[0])
+	if err != nil || !strings.Contains(string(htmlData), "Monthly Review Executive Summary") || !strings.Contains(string(htmlData), "2026-08") {
+		t.Fatalf("generated HTML is incomplete: err=%v", err)
+	}
+	pdfData, err := os.ReadFile(paths[1])
+	if err != nil || !strings.HasPrefix(string(pdfData), "%PDF-1.4") || !strings.HasSuffix(string(pdfData), "%%EOF\n") {
+		t.Fatalf("generated PDF is invalid: err=%v", err)
+	}
+	for _, path := range paths {
+		info, statErr := os.Stat(path)
+		if statErr != nil {
+			t.Fatalf("stat artifact %s: %v", path, statErr)
+		}
+		if info.Mode().Perm() != 0o600 {
+			t.Fatalf("artifact %s mode = %v", path, info.Mode().Perm())
 		}
 	}
 }

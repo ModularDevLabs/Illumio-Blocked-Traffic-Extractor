@@ -104,27 +104,33 @@
             transform: rotate(-90deg);
         }
     </style>
+    <link rel="stylesheet" href="/assets/app-shell.css">
 </head>
 <body data-theme="default" class="min-h-screen px-4 py-5 md:px-6 md:py-8 xl:px-8">
+    <script src="/assets/theme-init.js"></script>
     <div class="mx-auto w-full max-w-[118rem]">
-        <div class="mb-8 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+        <header class="app-header mb-8 flex flex-col gap-4 2xl:flex-row 2xl:justify-between">
             <div>
                 <p class="title mb-2 text-xs uppercase tracking-[0.35em]">Post-Fetch Analytics</p>
                 <h1 class="text-3xl font-bold md:text-4xl">Traffic Dashboard</h1>
                 <p id="fileLabel" class="muted mt-2 text-sm">Loading latest results...</p>
             </div>
-            <div class="flex flex-wrap items-center gap-3">
-                <div class="flex rounded-xl p-1 panel-soft">
-                    <button id="defaultThemeBtn" type="button" class="theme-button active rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em]">Dark</button>
-                    <button id="illumioThemeBtn" type="button" class="theme-button rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em]">Illumio Dark</button>
-                    <button id="illumioLightThemeBtn" type="button" class="theme-button rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em]">Illumio Light</button>
+            <div class="app-header-actions">
+                <nav class="app-nav" aria-label="Primary navigation">
+                    <a href="/" class="app-nav-link">Extractor</a>
+                    <a href="/summary" class="app-nav-link" aria-current="page">Analytics</a>
+                    <a href="/heatmaps" class="app-nav-link">Heatmaps</a>
+                    <a href="/executive-summary" class="app-nav-link">Executive</a>
+                    <a href="/automation" class="app-nav-link">Automation</a>
+                </nav>
+                <div class="theme-switcher" role="group" aria-label="Color theme">
+                    <button id="defaultThemeBtn" data-theme-option="default" aria-pressed="false" type="button" class="theme-button">Dark</button>
+                    <button id="illumioThemeBtn" data-theme-option="illumio" aria-pressed="false" type="button" class="theme-button">Illumio Dark</button>
+                    <button id="illumioLightThemeBtn" data-theme-option="illumio-light" aria-pressed="false" type="button" class="theme-button">Illumio Light</button>
                 </div>
-                <a href="/" class="inline-flex items-center rounded-lg panel-soft px-4 py-2 text-sm font-semibold">Back to Extractor</a>
-                <a href="/heatmaps" class="inline-flex items-center rounded-lg panel-soft px-4 py-2 text-sm font-semibold">Heatmap Explorer</a>
-                <a href="/executive-summary" class="inline-flex items-center rounded-lg panel-soft px-4 py-2 text-sm font-semibold">Executive Summary</a>
-                <button id="refreshSummaryBtn" class="inline-flex items-center rounded-lg px-4 py-2 text-sm font-semibold text-white" style="background: var(--accent-strong);">Refresh</button>
+                <button id="refreshSummaryBtn" class="app-header-action inline-flex items-center rounded-lg px-4 py-2 text-sm font-semibold text-white" style="background: var(--accent-strong);">Refresh</button>
             </div>
-        </div>
+        </header>
 
         <div class="mb-8 rounded-2xl border panel p-4">
             <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -135,11 +141,32 @@
 				<div class="grid gap-3 sm:grid-cols-2 md:flex md:items-center">
 					<input id="csvPrimaryLabel" type="text" value="env" aria-label="Primary CSV label type" placeholder="Primary label (for example BU)" class="rounded-lg px-3 py-2 text-sm">
 					<input id="csvSecondaryLabel" type="text" value="app" aria-label="Secondary CSV label type" placeholder="Secondary label (for example app)" class="rounded-lg px-3 py-2 text-sm">
+					<input id="csvDatasetName" type="text" maxlength="120" aria-label="Optional saved dataset name" placeholder="Save as named dataset (optional)" class="rounded-lg px-3 py-2 text-sm">
                     <input id="csvFile" type="file" accept=".csv,text/csv" multiple class="muted text-sm file:mr-4 file:rounded-lg file:border-0 file:px-4 file:py-2 file:text-sm file:font-semibold">
                     <button id="importCSVBtn" class="rounded-lg px-4 py-2 text-sm font-semibold text-white" style="background: var(--accent-strong);">Import CSVs</button>
                 </div>
             </div>
         </div>
+
+		<div class="mb-8 grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+			<section class="rounded-2xl border panel p-4">
+				<div class="flex flex-col gap-3 md:flex-row md:items-end">
+					<label class="flex-1 text-sm"><span class="muted mb-1 block text-xs uppercase tracking-wide">Saved Dataset Collections</span><select id="savedDatasetSelect" class="w-full rounded-lg border px-3 py-2"><option value="">Choose a saved dataset</option></select></label>
+					<button id="loadDatasetBtn" type="button" class="panel-soft rounded-lg px-4 py-2 text-sm font-semibold">Load</button>
+					<button id="deleteDatasetBtn" type="button" class="rounded-lg px-4 py-2 text-sm font-semibold text-white" style="background: #88132e;">Delete</button>
+				</div>
+				<div class="mt-3 flex flex-col gap-3 md:flex-row md:items-center">
+					<input id="saveDatasetName" maxlength="120" class="min-w-0 flex-1 rounded-lg border px-3 py-2 text-sm" placeholder="Name the currently loaded dataset">
+					<button id="saveDatasetBtn" type="button" class="rounded-lg px-4 py-2 text-sm font-semibold text-white" style="background: var(--accent-strong);">Save Current Dataset</button>
+				</div>
+				<p id="datasetMessage" class="muted mt-2 text-xs">Saved datasets can be reopened after restarting the application.</p>
+			</section>
+			<section id="coveragePanel" class="rounded-2xl border panel p-4">
+				<p class="muted text-xs uppercase tracking-wide">Data Coverage</p>
+				<p id="coverageSummary" class="mt-2 text-sm">No coverage metadata is available.</p>
+				<div id="coverageWarnings" class="mt-3 space-y-2"></div>
+			</section>
+		</div>
 
         <div id="emptyState" class="hidden rounded-2xl border panel-soft p-8 text-center">
             <p class="text-lg font-semibold">No analytics are available yet.</p>
@@ -405,6 +432,9 @@
             document.getElementById('defaultThemeBtn').classList.toggle('active', theme === 'default');
             document.getElementById('illumioThemeBtn').classList.toggle('active', theme === 'illumio');
             document.getElementById('illumioLightThemeBtn').classList.toggle('active', theme === 'illumio-light');
+            document.querySelectorAll('[data-theme-option]').forEach((button) => {
+                button.setAttribute('aria-pressed', String(button.dataset.themeOption === theme));
+            });
         }
 
         function loadSavedTheme() {
@@ -759,6 +789,7 @@
             try {
                 const res = await fetch(`/api/results/summary?ts=${Date.now()}`, { cache: 'no-store' });
                 const data = await res.json();
+				renderCoverage(data.coverage || {});
                 if (!data.summary || data.summary.length === 0) {
                     document.getElementById('emptyState').classList.remove('hidden');
                     document.getElementById('dashboard').classList.add('hidden');
@@ -768,7 +799,7 @@
 
                 document.getElementById('emptyState').classList.add('hidden');
                 document.getElementById('dashboard').classList.remove('hidden');
-                renderDashboard(data);
+				renderDashboard(data);
             } catch (error) {
                 document.getElementById('emptyState').classList.remove('hidden');
                 document.getElementById('dashboard').classList.add('hidden');
@@ -788,6 +819,7 @@
 			files.forEach(file => formData.append('files', file));
 			formData.append('primary_label_key', document.getElementById('csvPrimaryLabel').value || 'env');
 			formData.append('secondary_label_key', document.getElementById('csvSecondaryLabel').value || 'app');
+			formData.append('dataset_name', document.getElementById('csvDatasetName').value || '');
 			const selectionLabel = files.length === 1 ? files[0].name : `${files.length} CSV files`;
             document.getElementById('fileLabel').innerText = `Importing ${selectionLabel}...`;
 
@@ -803,10 +835,98 @@
                     return;
                 }
                 await loadSummary();
+				await loadDatasets();
             } catch (error) {
                 document.getElementById('fileLabel').innerText = `Import failed: ${error.message}`;
             }
         }
+
+		function coverageDate(value) {
+			if (!value) return '';
+			const date = new Date(value);
+			return Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString();
+		}
+
+		function renderCoverage(coverage = {}) {
+			const files = coverage.files || [];
+			const months = coverage.months || [];
+			const start = coverageDate(coverage.first_detected);
+			const end = coverageDate(coverage.last_detected);
+			const pieces = [];
+			if (files.length) pieces.push(`${formatNumber(files.length)} source file${files.length === 1 ? '' : 's'}`);
+			if (months.length) pieces.push(`${formatNumber(months.length)} covered month${months.length === 1 ? '' : 's'}`);
+			if (start && end) pieces.push(`${start} through ${end}`);
+			document.getElementById('coverageSummary').textContent = pieces.join(' · ') || 'No coverage metadata is available.';
+			const warnings = document.getElementById('coverageWarnings');
+			warnings.replaceChildren();
+			(coverage.warnings || []).forEach(message => {
+				const item = document.createElement('div');
+				item.className = 'rounded-lg border px-3 py-2 text-xs warning';
+				item.textContent = message;
+				warnings.appendChild(item);
+			});
+		}
+
+		async function datasetRequest(path, payload) {
+			const response = await fetch(path, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
+			const data = await response.json();
+			if (!response.ok || !data.success) throw new Error(data.error || `Request failed with HTTP ${response.status}`);
+			return data;
+		}
+
+		async function loadDatasets() {
+			const response = await fetch('/api/datasets', {cache: 'no-store'});
+			const data = await response.json();
+			const select = document.getElementById('savedDatasetSelect');
+			const previous = data.current_id || select.value;
+			select.replaceChildren(new Option('Choose a saved dataset', ''));
+			(data.datasets || []).forEach(dataset => {
+				const detail = dataset.month_count ? ` (${dataset.month_count} months)` : '';
+				select.appendChild(new Option(`${dataset.name}${detail}`, dataset.id));
+			});
+			if ([...select.options].some(option => option.value === previous)) select.value = previous;
+		}
+
+		async function loadSelectedDataset() {
+			const id = document.getElementById('savedDatasetSelect').value;
+			if (!id) return;
+			try {
+				await datasetRequest('/api/datasets/load', {id});
+				document.getElementById('datasetMessage').textContent = 'Saved dataset loaded.';
+				await loadSummary();
+			} catch (error) {
+				document.getElementById('datasetMessage').textContent = error.message;
+			}
+		}
+
+		async function saveCurrentDataset() {
+			const name = document.getElementById('saveDatasetName').value.trim();
+			if (!name) {
+				document.getElementById('datasetMessage').textContent = 'Enter a dataset name first.';
+				return;
+			}
+			try {
+				const data = await datasetRequest('/api/datasets/save', {name});
+				document.getElementById('datasetMessage').textContent = `Saved '${data.dataset.name}'.`;
+				document.getElementById('saveDatasetName').value = '';
+				await loadDatasets();
+			} catch (error) {
+				document.getElementById('datasetMessage').textContent = error.message;
+			}
+		}
+
+		async function deleteSelectedDataset() {
+			const select = document.getElementById('savedDatasetSelect');
+			const id = select.value;
+			if (!id || !confirm(`Delete saved dataset '${select.selectedOptions[0].textContent}'?`)) return;
+			try {
+				await datasetRequest('/api/datasets/delete', {id});
+				document.getElementById('datasetMessage').textContent = 'Saved dataset deleted. The currently loaded analytics remain available.';
+				await loadDatasets();
+			} catch (error) {
+				document.getElementById('datasetMessage').textContent = error.message;
+			}
+		}
 
         window.onload = () => {
             loadSavedTheme();
@@ -815,9 +935,13 @@
             document.getElementById('illumioLightThemeBtn').addEventListener('click', () => applyTheme('illumio-light'));
             document.getElementById('refreshSummaryBtn').addEventListener('click', loadSummary);
             document.getElementById('importCSVBtn').addEventListener('click', importCSV);
+			document.getElementById('loadDatasetBtn').addEventListener('click', loadSelectedDataset);
+			document.getElementById('saveDatasetBtn').addEventListener('click', saveCurrentDataset);
+			document.getElementById('deleteDatasetBtn').addEventListener('click', deleteSelectedDataset);
             initializeCollapsibles();
             document.getElementById('pivotSourceEnvSelect').addEventListener('change', () => renderEnvServicePivot(latestInsights));
             loadSummary();
+			loadDatasets();
         };
     </script>
 </body>

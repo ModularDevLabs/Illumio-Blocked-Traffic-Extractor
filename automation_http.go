@@ -185,11 +185,24 @@ func handleAutomationRunArtifact(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	runID := strings.TrimSpace(r.URL.Query().Get("id"))
+	kind := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("kind")))
+	if kind == "" {
+		kind = "csv"
+	}
 	automation.mu.Lock()
 	var artifactPath string
 	for _, run := range automation.data.Runs {
 		if run.ID == runID && run.Status == "completed" {
-			artifactPath = run.ArtifactPath
+			if kind == "csv" {
+				artifactPath = run.ArtifactPath
+			} else {
+				for _, candidate := range run.AdditionalArtifactPaths {
+					if strings.EqualFold(strings.TrimPrefix(filepath.Ext(candidate), "."), kind) {
+						artifactPath = candidate
+						break
+					}
+				}
+			}
 			break
 		}
 	}
@@ -209,7 +222,17 @@ func handleAutomationRunArtifact(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusNotFound, "artifact is unavailable")
 		return
 	}
-	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	contentType := "application/octet-stream"
+	if kind == "csv" {
+		contentType = "text/csv; charset=utf-8"
+	}
+	if kind == "html" {
+		contentType = "text/html; charset=utf-8"
+	}
+	if kind == "pdf" {
+		contentType = "application/pdf"
+	}
+	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": filepath.Base(artifactPath)}))
 	w.Header().Set("Cache-Control", "no-store")
 	http.ServeContent(w, r, filepath.Base(artifactPath), info.ModTime(), file)

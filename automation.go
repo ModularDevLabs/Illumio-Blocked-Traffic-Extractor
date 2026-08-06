@@ -21,32 +21,38 @@ import (
 )
 
 const (
-	automationStoreVersion = 1
+	automationStoreVersion = 2
 	maxAutomationRuns      = 500
 	defaultRetentionCount  = 20
 )
 
 type ReportTemplate struct {
-	ID                  string      `json:"id"`
-	Name                string      `json:"name"`
-	ProfileName         string      `json:"profile_name"`
-	SrcLabels           string      `json:"src_labels"`
-	DstLabels           string      `json:"dst_labels"`
-	ExcludeSrc          string      `json:"exclude_src"`
-	ExcludeDst          string      `json:"exclude_dst"`
-	Services            string      `json:"services"`
-	SavePath            string      `json:"save_path"`
-	FileNamePattern     string      `json:"file_name_pattern"`
-	Days                int         `json:"days"`
-	ChunkInterval       string      `json:"chunk_interval"`
-	AnalysisPrimary     string      `json:"analysis_primary_label"`
-	AnalysisSecondary   string      `json:"analysis_secondary_label"`
-	RetentionCount      int         `json:"retention_count"`
-	DeliveryDestination []string    `json:"delivery_destination_ids"`
-	Schedule            RunSchedule `json:"schedule"`
-	AlertPolicy         AlertPolicy `json:"alert_policy"`
-	CreatedAt           time.Time   `json:"created_at"`
-	UpdatedAt           time.Time   `json:"updated_at"`
+	ID                    string      `json:"id"`
+	Name                  string      `json:"name"`
+	ProfileName           string      `json:"profile_name"`
+	SrcLabels             string      `json:"src_labels"`
+	DstLabels             string      `json:"dst_labels"`
+	ExcludeSrc            string      `json:"exclude_src"`
+	ExcludeDst            string      `json:"exclude_dst"`
+	Services              string      `json:"services"`
+	SavePath              string      `json:"save_path"`
+	FileNamePattern       string      `json:"file_name_pattern"`
+	Days                  int         `json:"days"`
+	ChunkInterval         string      `json:"chunk_interval"`
+	AnalysisPrimary       string      `json:"analysis_primary_label"`
+	AnalysisSecondary     string      `json:"analysis_secondary_label"`
+	RetentionCount        int         `json:"retention_count"`
+	GenerateExecutiveHTML bool        `json:"generate_executive_html"`
+	GenerateExecutivePDF  bool        `json:"generate_executive_pdf"`
+	ReportTitle           string      `json:"report_title,omitempty"`
+	ReportCustomer        string      `json:"report_customer,omitempty"`
+	ReportPreparedBy      string      `json:"report_prepared_by,omitempty"`
+	ReportNotes           string      `json:"report_notes,omitempty"`
+	DeliveryDestination   []string    `json:"delivery_destination_ids"`
+	Schedule              RunSchedule `json:"schedule"`
+	AlertPolicy           AlertPolicy `json:"alert_policy"`
+	CreatedAt             time.Time   `json:"created_at"`
+	UpdatedAt             time.Time   `json:"updated_at"`
 }
 
 type RunSchedule struct {
@@ -179,19 +185,20 @@ type RunMetrics struct {
 }
 
 type AutomationRun struct {
-	ID              string           `json:"id"`
-	TemplateID      string           `json:"template_id"`
-	TemplateName    string           `json:"template_name"`
-	Trigger         string           `json:"trigger"`
-	Status          string           `json:"status"`
-	QueuedAt        time.Time        `json:"queued_at"`
-	StartedAt       time.Time        `json:"started_at,omitempty"`
-	CompletedAt     time.Time        `json:"completed_at,omitempty"`
-	ArtifactPath    string           `json:"artifact_path,omitempty"`
-	Error           string           `json:"error,omitempty"`
-	Metrics         RunMetrics       `json:"metrics"`
-	DeliveryResults []DeliveryResult `json:"delivery_results,omitempty"`
-	DeliverySkipped string           `json:"delivery_skipped,omitempty"`
+	ID                      string           `json:"id"`
+	TemplateID              string           `json:"template_id"`
+	TemplateName            string           `json:"template_name"`
+	Trigger                 string           `json:"trigger"`
+	Status                  string           `json:"status"`
+	QueuedAt                time.Time        `json:"queued_at"`
+	StartedAt               time.Time        `json:"started_at,omitempty"`
+	CompletedAt             time.Time        `json:"completed_at,omitempty"`
+	ArtifactPath            string           `json:"artifact_path,omitempty"`
+	AdditionalArtifactPaths []string         `json:"additional_artifact_paths,omitempty"`
+	Error                   string           `json:"error,omitempty"`
+	Metrics                 RunMetrics       `json:"metrics"`
+	DeliveryResults         []DeliveryResult `json:"delivery_results,omitempty"`
+	DeliverySkipped         string           `json:"delivery_skipped,omitempty"`
 }
 
 type automationStoreData struct {
@@ -431,6 +438,16 @@ func validateTemplate(template *ReportTemplate) error {
 	}
 	if template.RetentionCount == 0 {
 		template.RetentionCount = defaultRetentionCount
+	}
+	template.ReportTitle = strings.TrimSpace(template.ReportTitle)
+	template.ReportCustomer = strings.TrimSpace(template.ReportCustomer)
+	template.ReportPreparedBy = strings.TrimSpace(template.ReportPreparedBy)
+	template.ReportNotes = strings.TrimSpace(template.ReportNotes)
+	if len(template.ReportTitle) > 160 || len(template.ReportCustomer) > 160 || len(template.ReportPreparedBy) > 160 || len(template.ReportNotes) > 4000 {
+		return fmt.Errorf("executive report metadata exceeds the supported length")
+	}
+	if strings.ContainsAny(template.ReportTitle+template.ReportCustomer+template.ReportPreparedBy, "\r\n") {
+		return fmt.Errorf("report title, customer, and prepared-by values must each be one line")
 	}
 	if !filepath.IsAbs(strings.TrimSpace(template.SavePath)) {
 		return fmt.Errorf("scheduled template output folder must be an absolute path")
@@ -904,6 +921,7 @@ func (manager *AutomationManager) executeRun(parent context.Context, runID strin
 	cancelled := state.IsCancelled
 	summary := append([]PortProtocolSummary(nil), state.LastSummary...)
 	insights := state.LastInsights
+	coverage := state.DatasetCoverage
 	runError := state.RunError
 	state.Mu.Unlock()
 	if artifactPath == "" {
@@ -919,18 +937,24 @@ func (manager *AutomationManager) executeRun(parent context.Context, runID strin
 	}
 
 	metrics := manager.calculateMetrics(template.ID, runID, summary, insights)
+	additionalArtifacts, reportErr := generateScheduledExecutiveArtifacts(artifactPath, template, summary, insights, coverage)
+	if reportErr != nil {
+		manager.finishFailedRun(parent, runID, reportErr)
+		return
+	}
 	manager.mu.Lock()
 	index = manager.runIndexLocked(runID)
 	if index >= 0 {
 		manager.data.Runs[index].Status = "completed"
 		manager.data.Runs[index].CompletedAt = time.Now().UTC()
 		manager.data.Runs[index].ArtifactPath = artifactPath
+		manager.data.Runs[index].AdditionalArtifactPaths = additionalArtifacts
 		manager.data.Runs[index].Metrics = metrics
 		_ = manager.saveLocked()
 	}
 	manager.mu.Unlock()
 
-	manager.deliverCompletedRun(parent, runID, template, artifactPath, metrics)
+	manager.deliverCompletedRun(parent, runID, template, artifactPath, additionalArtifacts, metrics)
 	manager.applyRetention(template)
 }
 
@@ -1075,27 +1099,30 @@ func (manager *AutomationManager) applyRetention(template ReportTemplate) {
 		return
 	}
 	for _, run := range completed[retention:] {
-		cleaned := filepath.Clean(run.ArtifactPath)
-		root := filepath.Clean(template.SavePath)
-		relative, relErr := filepath.Rel(root, cleaned)
-		if !filepath.IsAbs(cleaned) || relErr != nil || relative == "." || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-			log.Printf("retention skipped artifact outside the template output folder: %s", cleaned)
-			continue
-		}
-		info, err := os.Lstat(cleaned)
-		if errors.Is(err, os.ErrNotExist) {
-			continue
-		}
-		if err != nil {
-			log.Printf("retention could not inspect %s: %v", cleaned, err)
-			continue
-		}
-		if !info.Mode().IsRegular() && info.Mode()&os.ModeSymlink == 0 {
-			log.Printf("retention refused to remove non-file artifact %s", cleaned)
-			continue
-		}
-		if err := os.Remove(cleaned); err != nil && !errors.Is(err, os.ErrNotExist) {
-			log.Printf("retention could not remove %s: %v", cleaned, err)
+		artifactPaths := append([]string{run.ArtifactPath}, run.AdditionalArtifactPaths...)
+		for _, artifactPath := range artifactPaths {
+			cleaned := filepath.Clean(artifactPath)
+			root := filepath.Clean(template.SavePath)
+			relative, relErr := filepath.Rel(root, cleaned)
+			if !filepath.IsAbs(cleaned) || relErr != nil || relative == "." || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+				log.Printf("retention skipped artifact outside the template output folder: %s", cleaned)
+				continue
+			}
+			info, err := os.Lstat(cleaned)
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			if err != nil {
+				log.Printf("retention could not inspect %s: %v", cleaned, err)
+				continue
+			}
+			if !info.Mode().IsRegular() && info.Mode()&os.ModeSymlink == 0 {
+				log.Printf("retention refused to remove non-file artifact %s", cleaned)
+				continue
+			}
+			if err := os.Remove(cleaned); err != nil && !errors.Is(err, os.ErrNotExist) {
+				log.Printf("retention could not remove %s: %v", cleaned, err)
+			}
 		}
 	}
 }

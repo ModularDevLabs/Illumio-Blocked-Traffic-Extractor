@@ -2,9 +2,9 @@
 
 A local desktop-style Go application for extracting blocked traffic from an Illumio PCE, exporting it as CSV, and reviewing the results through detailed, heatmap, and executive analytics views.
 
-Analytics dimensions are configurable from the PCE's discovered label types. The traditional `env` and `app` views remain the defaults, while custom keys such as `BU`, `region`, or `division` can be selected as the primary or secondary dimension and are carried through profiles, dashboards, heatmaps, executive summaries, and CSV re-import. Multiple non-overlapping CSV exports can be imported together for combined analysis and month-over-month trends.
+Analytics dimensions are configurable from the PCE's discovered label types. The traditional `env` and `app` views remain the defaults, while custom keys such as `BU`, `region`, or `division` can be selected as the primary or secondary dimension and are carried through profiles, dashboards, heatmaps, executive summaries, and CSV re-import. Multiple CSV exports can be imported into named, reusable datasets with coverage-gap and overlap detection, combined analysis, month-over-month charts, multi-service and relationship selectors, and period comparisons.
 
-The local Automation workspace at `/automation` adds reusable report templates, persistent scheduled runs, run-to-run change detection, artifact retention, and delivery through generic webhooks, Slack, Teams Workflows, email, shared folders, or host-key-pinned SFTP.
+The local Automation workspace at `/automation` adds reusable report templates, persistent scheduled runs, run-to-run change detection, CSV/HTML/PDF artifact retention, and delivery through generic webhooks, Slack, Teams Workflows, email, shared folders, or host-key-pinned SFTP. The executive view can also export a self-contained HTML report, print/save a light-theme PDF, download chart SVG/PNG files, and export its monthly trend data as CSV.
 
 ## Security model
 
