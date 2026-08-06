@@ -1,0 +1,15 @@
+[Unit]
+Description=Illumio Blocked Traffic Extractor Scheduler
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart="@@BINARY@@" --open-browser=false
+Restart=on-failure
+RestartSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target

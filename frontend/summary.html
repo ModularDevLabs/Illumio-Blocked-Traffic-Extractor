@@ -648,33 +648,32 @@
             });
         }
 
-        function buildExternalDestinationList(insights) {
-            const envRows = insights.env_matrix || [];
-            const destinationRows = insights.top_destination_ips || [];
-            const externalDestinations = destinationRows.filter(row => row.name !== 'External/Unmanaged');
-            const container = document.getElementById('externalDestinations');
+		function buildExternalDestinationList(insights) {
+			const envRows = insights.env_matrix || [];
+			const externalDestinations = insights.top_external_destination_ips || [];
+			const container = document.getElementById('externalDestinations');
 
-            const externalInbound = envRows
-                .filter(row => row.source === 'External/Unmanaged' || row.destination === 'External/Unmanaged')
-                .reduce((sum, row) => sum + (row.flow_count || 0), 0);
+			const boundaryFlows = envRows
+				.filter(row => row.source === 'External/Unmanaged' || row.destination === 'External/Unmanaged')
+				.reduce((sum, row) => sum + (row.flow_count || 0), 0);
 
-            if (externalDestinations.length === 0) {
-                container.innerHTML = `
-                    <div class="rounded-lg bg-gray-800/70 px-3 py-3 text-sm text-gray-500">
-                        No external or unmanaged destinations are currently represented in the latest run.
-                    </div>
-                `;
-                return;
-            }
+			container.innerHTML = `
+				<div class="mb-3 rounded-lg border border-gray-800 bg-gray-800/70 px-3 py-3">
+					<div class="text-xs uppercase tracking-widest text-gray-500">Boundary Traffic Total</div>
+					<div class="mt-1 text-lg font-bold text-amber-200">${formatNumber(boundaryFlows)} flows touching External/Unmanaged</div>
+				</div>
+			`;
 
-            container.innerHTML = `
-                <div class="mb-3 rounded-lg border border-gray-800 bg-gray-800/70 px-3 py-3">
-                    <div class="text-xs uppercase tracking-widest text-gray-500">Boundary Traffic Total</div>
-                    <div class="mt-1 text-lg font-bold text-amber-200">${formatNumber(externalInbound)} flows touching External/Unmanaged</div>
-                </div>
-            `;
+			if (externalDestinations.length === 0) {
+				container.insertAdjacentHTML('beforeend', `
+					<div class="rounded-lg bg-gray-800/70 px-3 py-3 text-sm text-gray-500">
+						No external or unmanaged destination endpoints are present. Boundary traffic, if shown above, originates from unmanaged sources.
+					</div>
+				`);
+				return;
+			}
 
-            externalDestinations.slice(0, 12).forEach(row => {
+			externalDestinations.slice(0, 12).forEach(row => {
                 const item = document.createElement('div');
                 item.className = 'flex items-center justify-between rounded-lg bg-gray-800/70 px-3 py-2';
                 item.innerHTML = `

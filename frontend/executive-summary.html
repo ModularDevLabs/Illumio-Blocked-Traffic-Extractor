@@ -601,7 +601,7 @@
             const totalFlows = summary.reduce((sum, row) => sum + (row.flow_count || 0), 0);
             const risky = riskyServiceRows(summary);
             const crossTalk = topCrossTalk(insights);
-            const topExternal = (insights.top_destination_ips || [])[0];
+			const topExternal = (insights.top_external_destination_ips || [])[0];
             const categories = insights.traffic_categories || [];
             const topCategory = categories.length > 0 ? categories[0] : null;
             const { latest, previous } = latestMonthSummary(insights.monthly_port_protocol || []);
@@ -881,7 +881,7 @@
             renderPersistentServices(persistentServiceRows(monthlyRows));
             renderLatestMonthChanges(monthlyRows);
             renderCrossTalk(topCrossTalk(insights), totalFlows);
-            renderExternalSpotlight(insights.top_destination_ips || []);
+			renderExternalSpotlight(insights.top_external_destination_ips || []);
             renderEnvironmentScorecards(environmentScorecards(insights), totalFlows);
         }
 
