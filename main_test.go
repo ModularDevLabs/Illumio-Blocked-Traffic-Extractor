@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -575,6 +577,145 @@ func TestParseCSVAnalyticsWithCustomDimensions(t *testing.T) {
 	}
 }
 
+func TestParseCSVAnalyticsInputsCombinesMonthsAndDeduplicatesConnections(t *testing.T) {
+	t.Parallel()
+
+	header := "Source IP,Destination IP,Port,Protocol,Flows,Src BU,Dst BU,Src App,Dst App,First Detected,Last Detected,FQDN"
+	january := strings.Join([]string{
+		header,
+		"10.0.0.1,10.0.0.2,443,TCP,3,Finance,Operations,Payments,ERP,01/05/26 01:15 PM,01/31/26 11:45 PM,api.example.com",
+	}, "\n")
+	february := strings.Join([]string{
+		header,
+		"10.0.0.1,10.0.0.2,443,TCP,5,Finance,Operations,Payments,ERP,2026-02-01 00:05:00,2026-02-28 22:00:00,api.example.com",
+	}, "\n")
+
+	summary, insights, err := parseCSVAnalyticsInputs([]csvAnalyticsInput{
+		{Name: "january.csv", Reader: strings.NewReader(january)},
+		{Name: "february.csv", Reader: strings.NewReader(february)},
+	}, "BU", "app")
+	if err != nil {
+		t.Fatalf("parseCSVAnalyticsInputs returned error: %v", err)
+	}
+	if len(summary) != 1 || summary[0].FlowCount != 8 || summary[0].UniqueConnections != 1 {
+		t.Fatalf("combined summary = %#v, want 8 flows and 1 unique connection", summary)
+	}
+	if len(insights.TopSourceIPs) != 1 || insights.TopSourceIPs[0].FlowCount != 8 || insights.TopSourceIPs[0].UniqueConnections != 1 {
+		t.Fatalf("combined source ranking = %#v", insights.TopSourceIPs)
+	}
+
+	monthly := make(map[string]MonthlyPortProtocolSummary)
+	for _, row := range insights.MonthlyPortProtocol {
+		monthly[row.Month] = row
+	}
+	if monthly["2026-01"].FlowCount != 3 || monthly["2026-01"].UniqueConnections != 1 {
+		t.Fatalf("January trend = %#v", monthly["2026-01"])
+	}
+	if monthly["2026-02"].FlowCount != 5 || monthly["2026-02"].UniqueConnections != 1 {
+		t.Fatalf("February trend = %#v", monthly["2026-02"])
+	}
+}
+
+func TestMonthlyPortProtocolDeduplicatesMatchingImportedConnections(t *testing.T) {
+	t.Parallel()
+
+	firstSeen := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	lastSeen := time.Date(2026, time.January, 31, 23, 0, 0, 0, time.UTC)
+	rows := monthlyPortProtocolFromRecords([]AnalyticsRecord{
+		{Identity: "same-connection", Month: "2026-01", Protocol: "TCP", Port: 443, FlowCount: 3, FirstSeen: firstSeen, LastSeen: lastSeen},
+		{Identity: "same-connection", Month: "2026-01", Protocol: "TCP", Port: 443, FlowCount: 5, FirstSeen: firstSeen, LastSeen: lastSeen},
+	})
+	if len(rows) != 1 || rows[0].FlowCount != 8 || rows[0].UniqueConnections != 1 || rows[0].ActiveConnections != 1 {
+		t.Fatalf("monthly rows = %#v, want additive flows and deduplicated connections", rows)
+	}
+}
+
+func TestHandleImportCSVAcceptsMultipleFilesAndRejectsDuplicates(t *testing.T) {
+	header := "Source IP,Destination IP,Port,Protocol,Flows,Src Env,Dst Env,Src App,Dst App,First Detected,Last Detected"
+	january := header + "\n10.0.0.1,10.0.0.2,443,TCP,3,Prod,Prod,API,ERP,2026-01-01 00:00:00,2026-01-31 23:00:00"
+	february := header + "\n10.0.0.1,10.0.0.2,443,TCP,5,Prod,Prod,API,ERP,2026-02-01 00:00:00,2026-02-28 23:00:00"
+
+	state.Mu.Lock()
+	previousSummary := state.LastSummary
+	previousInsights := state.LastInsights
+	previousFileName := state.FileName
+	previousDone := state.IsDone
+	previousCancelled := state.IsCancelled
+	state.Mu.Unlock()
+	t.Cleanup(func() {
+		state.Mu.Lock()
+		state.LastSummary = previousSummary
+		state.LastInsights = previousInsights
+		state.FileName = previousFileName
+		state.IsDone = previousDone
+		state.IsCancelled = previousCancelled
+		state.Mu.Unlock()
+	})
+
+	request := newCSVImportRequest(t, []struct {
+		name string
+		data string
+	}{{"january.csv", january}, {"february.csv", february}})
+	recorder := httptest.NewRecorder()
+	handleImportCSV(recorder, request)
+	var response struct {
+		Success   bool     `json:"success"`
+		FileCount int      `json:"fileCount"`
+		Files     []string `json:"files"`
+		Error     string   `json:"error"`
+	}
+	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.Success || response.FileCount != 2 || len(response.Files) != 2 {
+		t.Fatalf("multi-file response = %#v", response)
+	}
+
+	duplicateRequest := newCSVImportRequest(t, []struct {
+		name string
+		data string
+	}{{"first.csv", january}, {"copy.csv", january}})
+	duplicateRecorder := httptest.NewRecorder()
+	handleImportCSV(duplicateRecorder, duplicateRequest)
+	response = struct {
+		Success   bool     `json:"success"`
+		FileCount int      `json:"fileCount"`
+		Files     []string `json:"files"`
+		Error     string   `json:"error"`
+	}{}
+	if err := json.NewDecoder(duplicateRecorder.Body).Decode(&response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Success || !strings.Contains(response.Error, "duplicates the contents") {
+		t.Fatalf("duplicate-file response = %#v", response)
+	}
+}
+
+func newCSVImportRequest(t *testing.T, files []struct {
+	name string
+	data string
+}) *http.Request {
+	t.Helper()
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	for _, file := range files {
+		part, err := writer.CreateFormFile("files", file.name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := part.Write([]byte(file.data)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "http://localhost:8000/api/results/import-csv", &body)
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+	request.Header.Set("Origin", "http://localhost:8000")
+	return request
+}
+
 func TestParseCSVAnalyticsDistinguishesMissingCustomLabelFromExternal(t *testing.T) {
 	t.Parallel()
 
@@ -643,6 +784,24 @@ func TestExternalDestinationViewsUseDedicatedDataset(t *testing.T) {
 	} {
 		if !strings.Contains(string(executivePage), expected) {
 			t.Fatalf("executive summary is missing dedicated external-destination usage %q", expected)
+		}
+	}
+}
+
+func TestCSVImportViewsAllowMultipleFiles(t *testing.T) {
+	t.Parallel()
+
+	for _, page := range []string{"frontend/index.html", "frontend/summary.html"} {
+		content, err := staticFiles.ReadFile(page)
+		if err != nil {
+			t.Fatal(err)
+		}
+		html := string(content)
+		if !strings.Contains(html, `type="file" accept=".csv,text/csv" multiple`) {
+			t.Fatalf("%s does not expose a multiple CSV file picker", page)
+		}
+		if !strings.Contains(html, "formData.append('files', file)") {
+			t.Fatalf("%s does not submit every selected CSV", page)
 		}
 	}
 }

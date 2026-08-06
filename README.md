@@ -2,7 +2,7 @@
 
 A local desktop-style Go application for extracting blocked traffic from an Illumio PCE, exporting it as CSV, and reviewing the results through detailed, heatmap, and executive analytics views.
 
-Analytics dimensions are configurable from the PCE's discovered label types. The traditional `env` and `app` views remain the defaults, while custom keys such as `BU`, `region`, or `division` can be selected as the primary or secondary dimension and are carried through profiles, dashboards, heatmaps, executive summaries, and CSV re-import.
+Analytics dimensions are configurable from the PCE's discovered label types. The traditional `env` and `app` views remain the defaults, while custom keys such as `BU`, `region`, or `division` can be selected as the primary or secondary dimension and are carried through profiles, dashboards, heatmaps, executive summaries, and CSV re-import. Multiple non-overlapping CSV exports can be imported together for combined analysis and month-over-month trends.
 
 The local Automation workspace at `/automation` adds reusable report templates, persistent scheduled runs, run-to-run change detection, artifact retention, and delivery through generic webhooks, Slack, Teams Workflows, email, shared folders, or host-key-pinned SFTP.
 
