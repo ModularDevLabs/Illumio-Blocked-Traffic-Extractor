@@ -863,6 +863,12 @@ func TestApplicationHeadersUseConsistentNavigationAndThemeControls(t *testing.T)
 		if !strings.Contains(html, `<link rel="stylesheet" href="/assets/app-shell.css">`) {
 			t.Fatalf("%s does not load the shared header styles", page.file)
 		}
+		if !strings.Contains(html, `<script src="/assets/collapsible.js"></script>`) {
+			t.Fatalf("%s does not load the shared collapsible-section behavior", page.file)
+		}
+		if !strings.Contains(html, `data-auto-collapsible=`) {
+			t.Fatalf("%s does not expose any collapsible sections", page.file)
+		}
 		themeScript := strings.Index(html, `<script src="/assets/theme-init.js"></script>`)
 		if themeScript < 0 || themeScript > headerStart {
 			t.Fatalf("%s does not initialize the saved theme before rendering its header", page.file)
@@ -877,6 +883,44 @@ func TestApplicationHeadersUseConsistentNavigationAndThemeControls(t *testing.T)
 		if !strings.Contains(shellCSS, rule) {
 			t.Fatalf("shared app shell is missing the stable header rule %q", rule)
 		}
+	}
+}
+
+func TestExecutiveHTMLExportKeepsOfflineInteractions(t *testing.T) {
+	t.Parallel()
+
+	content, err := staticFiles.ReadFile("frontend/executive-summary.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	html := string(content)
+	for _, expected := range []string{
+		"window.__ITT_EXECUTIVE_PAYLOAD__",
+		"collapsibleSource = await (await fetch('/assets/collapsible.js')).text()",
+		"body.querySelectorAll('.app-nav, .app-header-action, [data-offline-remove], script')",
+		"setExportFilter(body, selectedSections)",
+		"initializeSectionImageActions()",
+		"downloadSectionImage(section.dataset.imageSection, button)",
+	} {
+		if !strings.Contains(html, expected) {
+			t.Fatalf("executive HTML export is missing offline behavior %q", expected)
+		}
+	}
+	if strings.Contains(html, "clone.querySelectorAll('.app-nav, .app-header-action, .no-export')") {
+		t.Fatal("executive HTML export removes interactive report controls")
+	}
+	if count := strings.Count(html, `data-export-section=`); count != len(executiveReportSectionOrder) {
+		t.Fatalf("executive report exposes %d selectable sections, want %d", count, len(executiveReportSectionOrder))
+	}
+	if count := strings.Count(html, `data-image-section=`); count != len(executiveReportSectionOrder)+1 {
+		t.Fatalf("executive report exposes %d image sections, want %d", count, len(executiveReportSectionOrder)+1)
+	}
+	collapsible, err := staticFiles.ReadFile("frontend/collapsible.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(collapsible), "window.ITTSections = { initialize, apply }") {
+		t.Fatal("shared collapsible behavior does not expose offline initialization")
 	}
 }
 

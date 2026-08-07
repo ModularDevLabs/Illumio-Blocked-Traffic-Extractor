@@ -4,7 +4,7 @@ A local desktop-style Go application for extracting blocked traffic from an Illu
 
 Analytics dimensions are configurable from the PCE's discovered label types. The traditional `env` and `app` views remain the defaults, while custom keys such as `BU`, `region`, or `division` can be selected as the primary or secondary dimension and are carried through profiles, dashboards, heatmaps, executive summaries, and CSV re-import. Multiple CSV exports can be imported into named, reusable datasets with coverage-gap and overlap detection, combined analysis, month-over-month charts, multi-service and relationship selectors, and period comparisons.
 
-The local Automation workspace at `/automation` adds reusable report templates, persistent scheduled runs, run-to-run change detection, CSV/HTML/PDF artifact retention, and delivery through generic webhooks, Slack, Teams Workflows, email, shared folders, or host-key-pinned SFTP. The executive view can also export a self-contained HTML report, print/save a light-theme PDF, download chart SVG/PNG files, and export its monthly trend data as CSV.
+The local Automation workspace at `/automation` adds reusable report templates, persistent scheduled runs, run-to-run change detection, CSV/HTML/PDF artifact retention, and delivery through generic webhooks, Slack, Teams Workflows, email, shared folders, or host-key-pinned SFTP. The executive view can compose HTML and print/PDF reports from selected sections, export any executive section as a presentation-ready PNG, export an interactive self-contained HTML report, download chart SVG/PNG files, and export monthly trend data as CSV. Major sections can be collapsed throughout every workspace, with their state remembered per page.
 
 ## Security model
 
@@ -81,6 +81,7 @@ Generated binaries, credentials, CSV exports, and logs are excluded by `.gitigno
 - Existing output files are never overwritten.
 - CSV cells that spreadsheet applications could interpret as formulas are neutralized.
 - PCE `first_detected` and `last_detected` values are retained independently.
+- Multi-file imports remove exact duplicate rows found in different files and deduplicate matching unique connections. Differing aggregate rows from partially overlapping windows remain additive because exported CSVs do not carry per-flow event IDs.
 
 ## License
 

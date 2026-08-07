@@ -204,7 +204,7 @@
         <div id="appShell" class="w-full p-6 md:p-8 rounded-xl shadow-2xl border">
         
         <!-- PCE Profiles -->
-        <div class="mb-8 p-4 rounded-lg border themed-panel">
+        <div class="mb-8 p-4 rounded-lg border themed-panel" data-auto-collapsible="pce-profiles" data-collapse-title="PCE Profiles">
             <h2 class="text-sm font-bold themed-muted uppercase tracking-wider mb-4">PCE Profiles</h2>
             <div class="flex space-x-4 mb-4">
                 <select id="profileSelect" class="flex-1 bg-gray-800 border border-gray-600 rounded p-2 outline-none">
@@ -219,7 +219,8 @@
         </div>
 
         <!-- PCE Config -->
-        <div class="grid grid-cols-2 gap-6 mb-4">
+        <div class="mb-6 rounded-lg border themed-soft-panel p-4" data-auto-collapsible="pce-connection" data-collapse-title="PCE Connection">
+        <div class="grid grid-cols-2 gap-6">
             <div class="col-span-1">
                 <label class="block text-xs font-bold text-gray-400 mb-1 italic uppercase">PCE URL</label>
                 <input id="pce_url" type="text" placeholder="https://pce.example.com:8443" autocomplete="off" spellcheck="false" class="w-full bg-gray-700 border border-gray-600 rounded p-2 outline-none">
@@ -243,8 +244,9 @@
                 </div>
             </div>
         </div>
+        </div>
 
-        <div class="mb-6 rounded-lg border themed-soft-panel p-4">
+        <div class="mb-6 rounded-lg border themed-soft-panel p-4" data-auto-collapsible="traffic-db" data-collapse-title="Traffic DB Availability">
             <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                 <div>
                     <h2 class="text-sm font-bold themed-muted uppercase tracking-wider">Traffic DB Availability</h2>
@@ -286,7 +288,7 @@
             </div>
         </div>
 
-        <div class="mb-8 rounded-lg border themed-soft-panel p-4">
+        <div class="mb-8 rounded-lg border themed-soft-panel p-4" data-auto-collapsible="analysis-labels" data-collapse-title="Analysis Label Types">
             <div class="mb-4">
                 <h2 class="text-sm font-bold uppercase tracking-wider">Analysis Label Types</h2>
                 <p class="mt-1 text-xs themed-muted">Choose the two label dimensions used by dashboards, heatmaps, and executive analysis. Load policy objects to populate custom types.</p>
@@ -312,6 +314,7 @@
         <hr class="border-gray-700 my-8">
 
         <!-- Query Filters -->
+        <div class="mb-8 rounded-lg border themed-soft-panel p-4" data-auto-collapsible="query-filters" data-collapse-title="Query Filters and Date Range">
         <div class="grid grid-cols-2 gap-6 mb-8">
             <div class="col-span-2 relative">
                 <label class="block text-sm font-semibold mb-2 text-blue-300 uppercase tracking-tighter">Sources (Labels or IP)</label>
@@ -366,11 +369,12 @@
                 <p class="mt-2 text-xs text-gray-400">If both dates are set, the explicit date range overrides <span class="font-semibold text-gray-300">Days To Fetch</span>.</p>
             </div>
         </div>
+        </div>
 
         <hr class="border-gray-700 my-8">
 
         <!-- File Settings -->
-        <div class="themed-soft-panel p-4 rounded-lg mb-8 border">
+        <div class="themed-soft-panel p-4 rounded-lg mb-8 border" data-auto-collapsible="export-settings" data-collapse-title="Export Settings">
             <h2 class="text-sm font-bold themed-muted uppercase tracking-wider mb-4 italic text-center">Export Settings</h2>
             <div class="grid grid-cols-2 gap-4">
                 <div>
@@ -402,11 +406,11 @@
             </a>
         </div>
 
-        <div class="mb-8 rounded-lg border themed-soft-panel p-4">
+        <div class="mb-8 rounded-lg border themed-soft-panel p-4" data-auto-collapsible="csv-import" data-collapse-title="Upload Existing CSVs">
             <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
                     <h2 class="text-sm font-bold uppercase tracking-wider">Upload Existing CSVs</h2>
-                    <p class="mt-1 text-xs themed-muted">Import one or more exports as a combined dataset using the analysis label types selected above. Use non-overlapping report windows to avoid counting the same flows twice.</p>
+                    <p class="mt-1 text-xs themed-muted">Import one or more exports together. Exact duplicate rows and unique connections are deduplicated; partially overlapping aggregate flow totals cannot be safely separated without per-flow event IDs.</p>
                 </div>
                 <div class="flex flex-col gap-3 md:flex-row md:items-center">
                     <input id="mainCsvDatasetName" type="text" maxlength="120" placeholder="Save as named dataset (optional)" class="rounded-lg border px-3 py-2 text-sm">
@@ -429,12 +433,13 @@
             </div>
         </div>
 
-        <div class="rounded-lg p-4 h-64 overflow-y-auto text-xs font-mono border themed-panel" id="logBox">
+        <div class="rounded-lg p-4 h-64 overflow-y-auto text-xs font-mono border themed-panel" id="logBox" data-auto-collapsible="activity-log" data-collapse-title="Extraction Activity Log">
             <div class="themed-muted italic">Logs will appear here...</div>
         </div>
         </div>
     </div>
 
+    <script src="/assets/collapsible.js"></script>
     <script>
         let profiles = {};
         let pollingInterval = null;

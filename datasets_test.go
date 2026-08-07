@@ -43,3 +43,54 @@ func TestDetailedCSVImportBuildsCoverageAndRelationshipTrends(t *testing.T) {
 		t.Fatalf("monthly external destinations = %#v", dataset.Insights.MonthlyExternalDestinations)
 	}
 }
+
+func TestDetailedCSVImportDeduplicatesExactRowsAcrossDifferentFiles(t *testing.T) {
+	t.Parallel()
+	header := "Source IP,Destination IP,Port,Protocol,Flows,Src Env,Dst Env,Src App,Dst App,First Detected,Last Detected"
+	duplicate := "10.0.0.1,10.0.0.2,443,TCP,12,Prod,Shared,Web,API,2026-01-02 01:00:00,2026-01-29 22:00:00"
+	first := strings.Join([]string{header, duplicate}, "\n")
+	second := strings.Join([]string{header, duplicate, "10.0.0.3,10.0.0.4,22,TCP,4,Prod,Shared,Batch,SSH,2026-01-04 01:00:00,2026-01-20 22:00:00"}, "\n")
+	dataset, err := parseCSVAnalyticsInputsDetailed([]csvAnalyticsInput{{Name: "first.csv", Reader: strings.NewReader(first)}, {Name: "second.csv", Reader: strings.NewReader(second)}}, "env", "app")
+	if err != nil {
+		t.Fatalf("parseCSVAnalyticsInputsDetailed: %v", err)
+	}
+	flows := 0
+	for _, row := range dataset.Summary {
+		flows += row.FlowCount
+	}
+	if flows != 16 {
+		t.Fatalf("total flows = %d, want 16 after removing the duplicated 12-flow row", flows)
+	}
+	if dataset.Coverage.DeduplicatedRecords != 1 || dataset.Coverage.DeduplicatedFlows != 12 {
+		t.Fatalf("deduplication coverage = %#v", dataset.Coverage)
+	}
+	monthlyFlows := 0
+	for _, row := range dataset.Insights.MonthlyPortProtocol {
+		monthlyFlows += row.FlowCount
+	}
+	if monthlyFlows != 16 {
+		t.Fatalf("monthly flows = %d, want 16 after deduplication", monthlyFlows)
+	}
+}
+
+func TestValidateReportMetadataCanonicalizesIncludedSections(t *testing.T) {
+	t.Parallel()
+
+	metadata, err := validateReportMetadata(ReportMetadata{IncludedSections: []string{"risky-services", "coverage", "risky-services"}})
+	if err != nil {
+		t.Fatalf("validateReportMetadata: %v", err)
+	}
+	if got, want := strings.Join(metadata.IncludedSections, ","), "coverage,risky-services"; got != want {
+		t.Fatalf("included sections = %q, want %q", got, want)
+	}
+	if _, err := validateReportMetadata(ReportMetadata{IncludedSections: []string{"unknown-section"}}); err == nil {
+		t.Fatal("validateReportMetadata accepted an unknown report section")
+	}
+	empty, err := validateReportMetadata(ReportMetadata{IncludedSections: []string{}})
+	if err != nil {
+		t.Fatalf("validateReportMetadata empty selection: %v", err)
+	}
+	if empty.IncludedSections == nil || len(empty.IncludedSections) != 0 {
+		t.Fatalf("empty explicit selection was not preserved: %#v", empty.IncludedSections)
+	}
+}

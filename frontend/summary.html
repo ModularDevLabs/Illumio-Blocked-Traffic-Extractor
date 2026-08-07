@@ -132,11 +132,11 @@
             </div>
         </header>
 
-        <div class="mb-8 rounded-2xl border panel p-4">
+        <div class="mb-8 rounded-2xl border panel p-4" data-auto-collapsible="csv-import" data-collapse-title="Import Existing CSVs">
             <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
                     <h2 class="text-sm font-semibold">Import Existing CSVs</h2>
-                    <p class="muted mt-1 text-xs">Select one or more exports to analyze them as a combined dataset. Use non-overlapping report windows because overlapping files add their flow counts more than once.</p>
+                    <p class="muted mt-1 text-xs">Exact duplicate rows and unique connections are deduplicated. Partially overlapping aggregate flow totals cannot be safely deduplicated without per-flow event IDs.</p>
                 </div>
 				<div class="grid gap-3 sm:grid-cols-2 md:flex md:items-center">
 					<input id="csvPrimaryLabel" type="text" value="env" aria-label="Primary CSV label type" placeholder="Primary label (for example BU)" class="rounded-lg px-3 py-2 text-sm">
@@ -149,7 +149,7 @@
         </div>
 
 		<div class="mb-8 grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-			<section class="rounded-2xl border panel p-4">
+			<section class="rounded-2xl border panel p-4" data-auto-collapsible="saved-datasets" data-collapse-title="Saved Dataset Collections">
 				<div class="flex flex-col gap-3 md:flex-row md:items-end">
 					<label class="flex-1 text-sm"><span class="muted mb-1 block text-xs uppercase tracking-wide">Saved Dataset Collections</span><select id="savedDatasetSelect" class="w-full rounded-lg border px-3 py-2"><option value="">Choose a saved dataset</option></select></label>
 					<button id="loadDatasetBtn" type="button" class="panel-soft rounded-lg px-4 py-2 text-sm font-semibold">Load</button>
@@ -161,7 +161,7 @@
 				</div>
 				<p id="datasetMessage" class="muted mt-2 text-xs">Saved datasets can be reopened after restarting the application.</p>
 			</section>
-			<section id="coveragePanel" class="rounded-2xl border panel p-4">
+			<section id="coveragePanel" class="rounded-2xl border panel p-4" data-auto-collapsible="data-coverage" data-collapse-title="Data Coverage">
 				<p class="muted text-xs uppercase tracking-wide">Data Coverage</p>
 				<p id="coverageSummary" class="mt-2 text-sm">No coverage metadata is available.</p>
 				<div id="coverageWarnings" class="mt-3 space-y-2"></div>
@@ -391,6 +391,7 @@
         </div>
     </div>
 
+    <script src="/assets/collapsible.js"></script>
     <script>
         let latestInsights = {};
 		let primaryDimensionName = 'Environment';
@@ -855,6 +856,7 @@
 			const pieces = [];
 			if (files.length) pieces.push(`${formatNumber(files.length)} source file${files.length === 1 ? '' : 's'}`);
 			if (months.length) pieces.push(`${formatNumber(months.length)} covered month${months.length === 1 ? '' : 's'}`);
+			if (coverage.deduplicated_records) pieces.push(`${formatNumber(coverage.deduplicated_records)} exact duplicate row${coverage.deduplicated_records === 1 ? '' : 's'} removed`);
 			if (start && end) pieces.push(`${start} through ${end}`);
 			document.getElementById('coverageSummary').textContent = pieces.join(' · ') || 'No coverage metadata is available.';
 			const warnings = document.getElementById('coverageWarnings');

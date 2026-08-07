@@ -17,6 +17,22 @@ const (
 	maxSavedDatasets    = 50
 )
 
+var executiveReportSectionOrder = []string{
+	"coverage",
+	"executive-overview",
+	"monthly-trends",
+	"service-trends",
+	"relationship-trends",
+	"period-comparison",
+	"headline-findings",
+	"risky-services",
+	"persistent-relationships",
+	"latest-changes",
+	"cross-talk",
+	"external-spotlight",
+	"dimension-scorecard",
+}
+
 type DatasetFileCoverage struct {
 	Name          string    `json:"name"`
 	SHA256        string    `json:"sha256,omitempty"`
@@ -35,22 +51,25 @@ type DatasetOverlap struct {
 }
 
 type DatasetCoverage struct {
-	Source        string                `json:"source"`
-	Files         []DatasetFileCoverage `json:"files"`
-	FirstDetected time.Time             `json:"first_detected,omitempty"`
-	LastDetected  time.Time             `json:"last_detected,omitempty"`
-	Months        []string              `json:"months"`
-	MissingMonths []string              `json:"missing_months"`
-	Overlaps      []DatasetOverlap      `json:"overlaps"`
-	Warnings      []string              `json:"warnings"`
+	Source              string                `json:"source"`
+	Files               []DatasetFileCoverage `json:"files"`
+	FirstDetected       time.Time             `json:"first_detected,omitempty"`
+	LastDetected        time.Time             `json:"last_detected,omitempty"`
+	Months              []string              `json:"months"`
+	MissingMonths       []string              `json:"missing_months"`
+	Overlaps            []DatasetOverlap      `json:"overlaps"`
+	DeduplicatedRecords int                   `json:"deduplicated_records,omitempty"`
+	DeduplicatedFlows   int                   `json:"deduplicated_flows,omitempty"`
+	Warnings            []string              `json:"warnings"`
 }
 
 type ReportMetadata struct {
-	Title        string `json:"title"`
-	CustomerName string `json:"customer_name"`
-	PreparedBy   string `json:"prepared_by"`
-	Notes        string `json:"notes"`
-	LogoDataURL  string `json:"logo_data_url,omitempty"`
+	Title            string   `json:"title"`
+	CustomerName     string   `json:"customer_name"`
+	PreparedBy       string   `json:"prepared_by"`
+	Notes            string   `json:"notes"`
+	LogoDataURL      string   `json:"logo_data_url,omitempty"`
+	IncludedSections []string `json:"included_sections"`
 }
 
 type SavedDataset struct {
@@ -160,6 +179,26 @@ func validateReportMetadata(metadata ReportMetadata) (ReportMetadata, error) {
 		allowed := strings.HasPrefix(metadata.LogoDataURL, "data:image/png;base64,") || strings.HasPrefix(metadata.LogoDataURL, "data:image/jpeg;base64,") || strings.HasPrefix(metadata.LogoDataURL, "data:image/svg+xml;base64,")
 		if !allowed {
 			return ReportMetadata{}, fmt.Errorf("report logo must be a PNG, JPEG, or SVG data URL")
+		}
+	}
+	if metadata.IncludedSections != nil {
+		requested := make(map[string]struct{}, len(metadata.IncludedSections))
+		allowed := make(map[string]struct{}, len(executiveReportSectionOrder))
+		for _, section := range executiveReportSectionOrder {
+			allowed[section] = struct{}{}
+		}
+		for _, section := range metadata.IncludedSections {
+			section = strings.TrimSpace(section)
+			if _, ok := allowed[section]; !ok {
+				return ReportMetadata{}, fmt.Errorf("unsupported executive report section %q", section)
+			}
+			requested[section] = struct{}{}
+		}
+		metadata.IncludedSections = make([]string, 0, len(requested))
+		for _, section := range executiveReportSectionOrder {
+			if _, ok := requested[section]; ok {
+				metadata.IncludedSections = append(metadata.IncludedSections, section)
+			}
 		}
 	}
 	if metadata.Title == "" {
@@ -299,12 +338,15 @@ func normalizeCoverage(coverage DatasetCoverage) DatasetCoverage {
 	if len(coverage.MissingMonths) > 0 {
 		coverage.Warnings = append(coverage.Warnings, "Missing months: "+strings.Join(coverage.MissingMonths, ", ")+". They are shown as gaps rather than zero activity.")
 	}
+	if coverage.DeduplicatedRecords > 0 {
+		coverage.Warnings = append(coverage.Warnings, fmt.Sprintf("Removed %d exact duplicate row(s), representing %d duplicate flow(s), found in more than one source file.", coverage.DeduplicatedRecords, coverage.DeduplicatedFlows))
+	}
 	if len(coverage.Overlaps) > 0 {
 		pairs := make([]string, 0, len(coverage.Overlaps))
 		for _, overlap := range coverage.Overlaps {
 			pairs = append(pairs, overlap.FirstFile+" / "+overlap.SecondFile)
 		}
-		coverage.Warnings = append(coverage.Warnings, "Overlapping windows: "+strings.Join(pairs, ", ")+". Flow totals are additive and may count the same observed flows more than once.")
+		coverage.Warnings = append(coverage.Warnings, "Overlapping windows: "+strings.Join(pairs, ", ")+". Exact duplicate rows and unique connections are deduplicated; other aggregate flow totals remain additive because the CSV does not contain per-flow event IDs.")
 	}
 	return coverage
 }

@@ -108,7 +108,7 @@
 
         <div id="messageBar" class="hidden rounded-xl border px-4 py-3 text-sm"></div>
 
-        <section class="panel rounded-2xl border p-5">
+        <section class="panel rounded-2xl border p-5" data-auto-collapsible="report-templates" data-collapse-title="Report Templates">
             <div class="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
                 <div>
                     <h2 class="text-xl font-bold">Report Templates</h2>
@@ -206,7 +206,7 @@
             </form>
         </section>
 
-        <section class="panel rounded-2xl border p-5">
+        <section class="panel rounded-2xl border p-5" data-auto-collapsible="delivery-destinations" data-collapse-title="Delivery Destinations">
             <div class="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
                 <div><h2 class="text-xl font-bold">Delivery Destinations</h2><p class="muted mt-1 text-sm">Secrets are stored locally with owner-only permissions and are never returned to the browser.</p></div>
                 <div class="flex gap-2"><select id="destinationSelect" class="min-w-64 rounded-lg px-3 py-2 text-sm"><option value="">New destination</option></select><button id="newDestinationBtn" type="button" class="soft rounded-lg border px-4 py-2 text-sm font-semibold">New</button><button id="deleteDestinationBtn" type="button" class="danger rounded-lg px-4 py-2 text-sm font-semibold">Delete</button></div>
@@ -239,12 +239,13 @@
             </form>
         </section>
 
-        <section class="panel rounded-2xl border p-5">
+        <section class="panel rounded-2xl border p-5" data-auto-collapsible="run-history" data-collapse-title="Run History">
             <div class="flex items-center justify-between"><div><h2 class="text-xl font-bold">Run History</h2><p class="muted mt-1 text-sm">Queued and scheduled runs survive restarts. The most recent 200 runs are shown.</p></div><button id="refreshBtn" type="button" class="soft rounded-lg border px-4 py-2 text-sm font-semibold">Refresh</button></div>
             <div class="mt-5 overflow-auto"><table class="min-w-full text-left text-sm"><thead class="muted border-b"><tr><th class="px-3 py-3">Template</th><th class="px-3 py-3">Trigger</th><th class="px-3 py-3">Status</th><th class="px-3 py-3">Queued</th><th class="px-3 py-3">Flows</th><th class="px-3 py-3">Changes</th><th class="px-3 py-3">Delivery</th><th class="px-3 py-3">Artifact</th></tr></thead><tbody id="runHistoryBody"></tbody></table></div>
         </section>
     </main>
 
+    <script src="/assets/collapsible.js"></script>
     <script>
         let automationState = { templates: [], destinations: [], runs: [], timezone: '' };
         let profiles = {};
