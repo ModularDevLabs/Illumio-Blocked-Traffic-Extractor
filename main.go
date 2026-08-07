@@ -32,7 +32,7 @@ import (
 	"github.com/pkg/browser"
 )
 
-//go:embed frontend/*.html frontend/tailwind.css frontend/app-shell.css frontend/theme-init.js
+//go:embed frontend/*.html frontend/tailwind.css frontend/app-shell.css frontend/theme-init.js frontend/collapsible.js
 var staticFiles embed.FS
 
 type PCEProfile struct {
@@ -782,6 +782,9 @@ func main() {
 	})
 	mux.HandleFunc("/assets/theme-init.js", func(w http.ResponseWriter, r *http.Request) {
 		serveEmbeddedAsset(w, r, "frontend/theme-init.js", "text/javascript; charset=utf-8")
+	})
+	mux.HandleFunc("/assets/collapsible.js", func(w http.ResponseWriter, r *http.Request) {
+		serveEmbeddedAsset(w, r, "frontend/collapsible.js", "text/javascript; charset=utf-8")
 	})
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
@@ -1707,7 +1710,8 @@ func parseCSVAnalyticsInputsDetailed(inputs []csvAnalyticsInput, primaryLabelKey
 
 	allRecords := []AnalyticsRecord{}
 	coverage := DatasetCoverage{Source: "csv_import", Files: make([]DatasetFileCoverage, 0, len(inputs))}
-	for _, input := range inputs {
+	seenExactRecords := make(map[string]int)
+	for inputIndex, input := range inputs {
 		records, err := parseCSVAnalyticsRecords(input.Reader, input.Name, primaryLabelKey, secondaryLabelKey)
 		if err != nil {
 			return parsedAnalyticsDataset{}, err
@@ -1733,7 +1737,16 @@ func parseCSVAnalyticsInputsDetailed(inputs []csvAnalyticsInput, primaryLabelKey
 		}
 		sort.Strings(fileCoverage.Months)
 		coverage.Files = append(coverage.Files, fileCoverage)
-		allRecords = append(allRecords, records...)
+		for _, record := range records {
+			fingerprint := importedAnalyticsRecordFingerprint(record)
+			if firstInput, seen := seenExactRecords[fingerprint]; seen && firstInput != inputIndex {
+				coverage.DeduplicatedRecords++
+				coverage.DeduplicatedFlows += record.FlowCount
+				continue
+			}
+			seenExactRecords[fingerprint] = inputIndex
+			allRecords = append(allRecords, record)
+		}
 	}
 
 	mergedRecords := mergeImportedAnalyticsRecords(allRecords)
@@ -1744,6 +1757,18 @@ func parseCSVAnalyticsInputsDetailed(inputs []csvAnalyticsInput, primaryLabelKey
 	insights.MonthlyPortProtocol = monthlyPortProtocolFromRecords(allRecords)
 	insights.MonthlyRelationships, insights.MonthlyExternalDestinations = monthlyDimensionAnalyticsFromRecords(allRecords)
 	return parsedAnalyticsDataset{Summary: summary, Insights: insights, Coverage: normalizeCoverage(coverage)}, nil
+}
+
+func importedAnalyticsRecordFingerprint(record AnalyticsRecord) string {
+	return strings.Join([]string{
+		record.Identity,
+		record.Month,
+		strconv.Itoa(record.FlowCount),
+		record.FirstSeen.UTC().Format(time.RFC3339Nano),
+		record.LastSeen.UTC().Format(time.RFC3339Nano),
+		strconv.FormatBool(record.SrcManaged),
+		strconv.FormatBool(record.DstManaged),
+	}, "\x1f")
 }
 
 func monthlyDimensionAnalyticsFromRecords(records []AnalyticsRecord) ([]MonthlyRelationshipSummary, []MonthlyDestinationSummary) {

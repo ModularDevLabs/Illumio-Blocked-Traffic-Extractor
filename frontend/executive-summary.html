@@ -220,6 +220,9 @@
 		.report-logo { max-height: 4.5rem; max-width: 15rem; object-fit: contain; }
 		.report-notes { white-space: pre-wrap; }
 		.export-button { border: 1px solid var(--border); background: var(--panel-soft); color: var(--text); }
+		body[data-export-filtered="true"] [data-export-section].is-export-excluded { display: none !important; }
+		.report-section-choice { border: 1px solid var(--border); background: var(--panel-soft); }
+		.report-section-choice:has(input:checked) { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 
 		@media print {
 			@page { size: A4 landscape; margin: 10mm; }
@@ -264,7 +267,7 @@
             </div>
         </header>
 
-		<section id="reportIdentity" class="panel mb-8 rounded-3xl p-6">
+		<section id="reportIdentity" class="panel mb-8 rounded-3xl p-6" data-auto-collapsible="report-identity" data-collapse-title="Report Identity" data-image-section="report-identity">
 			<div class="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
 				<div class="flex min-w-0 items-center gap-5">
 					<img id="reportLogo" class="report-logo hidden" alt="Report logo">
@@ -282,28 +285,39 @@
 			<p id="reportNotes" class="report-notes muted mt-4 hidden text-sm leading-6"></p>
 		</section>
 
-		<section class="no-export panel mb-8 rounded-3xl p-6">
+		<section class="no-export panel mb-8 rounded-3xl p-6" data-auto-collapsible="report-configuration" data-collapse-title="Report Configuration" data-offline-remove>
 			<div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
 				<div><p class="label">Report Configuration</p><h2 class="headline mt-2 text-xl font-bold">Branding, coverage, and exports</h2></div>
 				<p id="reportConfigMessage" class="muted text-sm">Settings are retained with a saved dataset.</p>
 			</div>
-			<div class="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+			<div class="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4" data-offline-remove>
 				<label class="text-sm">Report Title<input id="reportTitleInput" maxlength="160" class="mt-1 w-full rounded-lg border px-3 py-2" value="Blocked Traffic Executive Summary"></label>
 				<label class="text-sm">Customer Name<input id="reportCustomerInput" maxlength="160" class="mt-1 w-full rounded-lg border px-3 py-2"></label>
 				<label class="text-sm">Prepared By<input id="reportPreparedInput" maxlength="160" class="mt-1 w-full rounded-lg border px-3 py-2"></label>
 				<label class="text-sm">Optional Logo<input id="reportLogoInput" type="file" accept="image/png,image/jpeg,image/svg+xml" class="mt-1 w-full text-sm"></label>
 				<label class="text-sm md:col-span-2 xl:col-span-4">Report Notes<textarea id="reportNotesInput" maxlength="4000" rows="3" class="mt-1 w-full rounded-lg border px-3 py-2"></textarea></label>
 			</div>
-			<div class="mt-4 flex flex-wrap gap-3">
+			<div class="mt-4 flex flex-wrap gap-3" data-offline-remove>
 				<button id="saveReportMetadataBtn" type="button" class="rounded-lg px-4 py-2 text-sm font-semibold text-white" style="background: var(--accent-strong);">Save Report Settings</button>
 				<button id="clearReportLogoBtn" type="button" class="export-button rounded-lg px-4 py-2 text-sm font-semibold">Clear Logo</button>
 				<button id="downloadMonthlyCSVBtn" type="button" class="export-button rounded-lg px-4 py-2 text-sm font-semibold">Download Monthly Data CSV</button>
 			</div>
-			<div id="executiveCoverage" class="mt-5 grid gap-3 md:grid-cols-3"></div>
+			<div class="mt-6 border-t pt-5" data-offline-remove>
+				<div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+					<div><p class="label">Export Composer</p><p class="muted mt-1 text-sm">Choose which sections appear in downloaded HTML and print/PDF exports. The live dashboard is unchanged.</p></div>
+					<div class="flex gap-2"><button id="selectAllReportSectionsBtn" type="button" class="export-button rounded-lg px-3 py-2 text-xs font-semibold">Select All</button><button id="clearReportSectionsBtn" type="button" class="export-button rounded-lg px-3 py-2 text-xs font-semibold">Clear</button></div>
+				</div>
+				<div id="reportSectionChoices" class="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3"></div>
+			</div>
+		</section>
+
+		<section class="panel mb-8 rounded-3xl p-6" data-auto-collapsible="coverage" data-collapse-title="Data Coverage" data-image-section="coverage" data-export-section="coverage">
+			<div><p class="label">Data Coverage</p><h2 class="headline mt-2 text-xl font-bold">Source windows and import integrity</h2></div>
+			<div id="executiveCoverage" class="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4"></div>
 			<div id="executiveCoverageWarnings" class="mt-3 space-y-2"></div>
 		</section>
 
-        <div class="hero mb-8 rounded-3xl p-6">
+		<div class="hero mb-8 rounded-3xl p-6" data-auto-collapsible="executive-overview" data-collapse-title="Executive Overview" data-image-section="executive-overview" data-export-section="executive-overview">
             <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
                 <div class="panel-soft rounded-2xl p-5">
                     <p class="label">Total Blocked Flows</p>
@@ -362,7 +376,7 @@
                 </div>
             </section>
 
-			<section class="panel rounded-3xl p-6">
+			<section class="panel rounded-3xl p-6" data-auto-collapsible="monthly-trends" data-collapse-title="Month-over-Month Trends" data-image-section="monthly-trends" data-export-section="monthly-trends">
 				<div class="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
 					<div><p class="label">Month-over-Month Trends</p><h2 class="headline mt-2 text-2xl font-bold">Blocked traffic movement over time</h2></div>
 					<div class="no-export flex flex-wrap items-end gap-3">
@@ -379,7 +393,7 @@
 				</div>
 			</section>
 
-			<section class="panel rounded-3xl p-6">
+			<section class="panel rounded-3xl p-6" data-auto-collapsible="service-trends" data-collapse-title="Service Trends" data-image-section="service-trends" data-export-section="service-trends">
 				<div class="grid gap-6 xl:grid-cols-[22rem_minmax(0,1fr)]">
 					<div class="no-export">
 						<p class="label">Service Trends</p>
@@ -392,7 +406,7 @@
 				</div>
 			</section>
 
-			<section class="panel rounded-3xl p-6">
+			<section class="panel rounded-3xl p-6" data-auto-collapsible="relationship-trends" data-collapse-title="Relationship Trends" data-image-section="relationship-trends" data-export-section="relationship-trends">
 				<div class="grid gap-6 xl:grid-cols-[22rem_minmax(0,1fr)]">
 					<div class="no-export">
 						<p class="label">Relationship Trends</p><h2 class="headline mt-2 text-2xl font-bold">Primary-label paths over time</h2>
@@ -403,7 +417,7 @@
 				</div>
 			</section>
 
-			<section class="panel rounded-3xl p-6">
+			<section class="panel rounded-3xl p-6" data-auto-collapsible="period-comparison" data-collapse-title="Period Comparison" data-image-section="period-comparison" data-export-section="period-comparison">
 				<div class="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
 					<div><p class="label">Period Comparison</p><h2 class="headline mt-2 text-2xl font-bold">What changed between two months</h2></div>
 					<div class="no-export flex flex-wrap gap-3"><label class="text-xs">Earlier Month<select id="comparisonStartMonth" class="mt-1 rounded-lg border px-3 py-2 text-sm"></select></label><label class="text-xs">Later Month<select id="comparisonEndMonth" class="mt-1 rounded-lg border px-3 py-2 text-sm"></select></label></div>
@@ -413,7 +427,7 @@
 			</section>
 
             <section class="grid gap-8 xl:grid-cols-[1.2fr_0.8fr]">
-                <div class="panel rounded-3xl p-6">
+				<div class="panel rounded-3xl p-6" data-auto-collapsible="headline-findings" data-collapse-title="Headline Findings" data-image-section="headline-findings" data-export-section="headline-findings">
                     <div class="flex items-center justify-between gap-4">
                         <div>
                             <p class="label">Headline Findings</p>
@@ -424,7 +438,7 @@
                     <div id="headlineFindings" class="mt-6 grid gap-4"></div>
                 </div>
 
-                <div class="panel rounded-3xl p-6">
+				<div class="panel rounded-3xl p-6" data-auto-collapsible="risky-services" data-collapse-title="Risky Services" data-image-section="risky-services" data-export-section="risky-services">
                     <p class="label">Risky Services</p>
                     <h2 class="headline mt-2 text-2xl font-bold">Blocked traffic by high-risk service</h2>
                     <div id="riskyServiceChart" class="mt-6 space-y-3"></div>
@@ -432,13 +446,13 @@
             </section>
 
             <section class="grid gap-8 xl:grid-cols-2">
-                <div class="panel rounded-3xl p-6">
+				<div class="panel rounded-3xl p-6" data-auto-collapsible="persistent-relationships" data-collapse-title="Persistent Relationships" data-image-section="persistent-relationships" data-export-section="persistent-relationships">
                     <p class="label">Persistent Relationships</p>
                     <h2 class="headline mt-2 text-2xl font-bold">Blocked services that persist across months</h2>
                     <div id="persistentServices" class="mt-6 space-y-3"></div>
                 </div>
 
-                <div class="panel rounded-3xl p-6">
+				<div class="panel rounded-3xl p-6" data-auto-collapsible="latest-changes" data-collapse-title="Latest-Month Changes" data-image-section="latest-changes" data-export-section="latest-changes">
                     <p class="label">What Changed This Month</p>
                     <h2 class="headline mt-2 text-2xl font-bold">New port / protocol pairs in the latest month</h2>
                     <div id="latestMonthChanges" class="mt-6 space-y-3"></div>
@@ -446,20 +460,20 @@
             </section>
 
             <section class="grid gap-8 xl:grid-cols-2">
-                <div class="panel rounded-3xl p-6">
+				<div class="panel rounded-3xl p-6" data-auto-collapsible="cross-talk" data-collapse-title="Cross-Talk" data-image-section="cross-talk" data-export-section="cross-talk">
                     <p class="label">Cross-Talk</p>
 					<h2 id="primaryRelationshipsTitle" class="headline mt-2 text-2xl font-bold">Top environment-to-environment relationships</h2>
                     <div id="crossTalkList" class="mt-6 space-y-3"></div>
                 </div>
 
-                <div class="panel rounded-3xl p-6">
+				<div class="panel rounded-3xl p-6" data-auto-collapsible="external-spotlight" data-collapse-title="External Spotlight" data-image-section="external-spotlight" data-export-section="external-spotlight">
                     <p class="label">External Spotlight</p>
                     <h2 class="headline mt-2 text-2xl font-bold">Most significant external / unmanaged destinations</h2>
                     <div id="externalSpotlight" class="mt-6 space-y-3"></div>
                 </div>
             </section>
 
-            <section class="panel rounded-3xl p-6">
+			<section class="panel rounded-3xl p-6" data-auto-collapsible="dimension-scorecard" data-collapse-title="Dimension Scorecard" data-image-section="dimension-scorecard" data-export-section="dimension-scorecard">
 				<p id="primaryScorecardLabel" class="label">Environment Scorecard</p>
                 <h2 class="headline mt-2 text-2xl font-bold">Where blocked traffic is concentrated</h2>
                 <div id="environmentScorecards" class="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3"></div>
@@ -467,10 +481,12 @@
         </div>
     </div>
 
+    <script src="/assets/collapsible.js"></script>
     <script>
 		let primaryDimensionName = 'Environment';
 		let latestExecutivePayload = null;
 		let reportLogoDataURL = '';
+		let includedReportSections = null;
 		const trendColors = ['#ff5500', '#22c55e', '#38bdf8', '#a855f7', '#f59e0b', '#e11d48', '#14b8a6', '#6366f1'];
 
 		function dimensionName(key) {
@@ -529,9 +545,12 @@
         function applyTheme(theme) {
             document.body.dataset.theme = theme;
             localStorage.setItem('ittTheme', theme);
-            document.getElementById('defaultThemeBtn').classList.toggle('active', theme === 'default');
-            document.getElementById('illumioThemeBtn').classList.toggle('active', theme === 'illumio');
-            document.getElementById('illumioLightThemeBtn').classList.toggle('active', theme === 'illumio-light');
+			const defaultButton = document.getElementById('defaultThemeBtn');
+			const illumioButton = document.getElementById('illumioThemeBtn');
+			const lightButton = document.getElementById('illumioLightThemeBtn');
+			if (defaultButton) defaultButton.classList.toggle('active', theme === 'default');
+			if (illumioButton) illumioButton.classList.toggle('active', theme === 'illumio');
+			if (lightButton) lightButton.classList.toggle('active', theme === 'illumio-light');
             document.querySelectorAll('[data-theme-option]').forEach((button) => {
                 button.setAttribute('aria-pressed', String(button.dataset.themeOption === theme));
             });
@@ -908,12 +927,66 @@
 			const cards = [
 				{label: 'Source Files', value: formatNumber(files.length || (coverage.source === 'live_extraction' ? 1 : 0))},
 				{label: 'Covered Months', value: formatNumber(months.length)},
-				{label: 'Missing / Overlapping', value: `${missing.length} / ${(coverage.overlaps || []).length}`}
+				{label: 'Missing / Overlapping', value: `${missing.length} / ${(coverage.overlaps || []).length}`},
+				{label: 'Exact Rows Deduplicated', value: formatNumber(coverage.deduplicated_records || 0)}
 			];
 			const container = document.getElementById('executiveCoverage'); container.replaceChildren();
 			cards.forEach(card => { const row = document.createElement('div'); row.className = 'panel-soft rounded-xl p-4'; row.innerHTML = `<p class="label">${escapeHtml(card.label)}</p><p class="headline mt-2 text-xl font-bold">${escapeHtml(card.value)}</p>`; container.appendChild(row); });
 			const warnings = document.getElementById('executiveCoverageWarnings'); warnings.replaceChildren();
 			(coverage.warnings || []).forEach(message => { const row = document.createElement('div'); row.className = 'rounded-xl border px-4 py-3 text-sm metric-warning'; row.textContent = message; warnings.appendChild(row); });
+		}
+
+		function reportSectionDefinitions() {
+			return [...document.querySelectorAll('[data-export-section]')].map(section => ({
+				id: section.dataset.exportSection,
+				label: section.dataset.collapseTitle || section.dataset.exportSection
+			}));
+		}
+
+		function selectedReportSectionIDs() {
+			const choices = [...document.querySelectorAll('#reportSectionChoices input[data-report-section]')];
+			if (choices.length) return choices.filter(choice => choice.checked).map(choice => choice.dataset.reportSection);
+			if (Array.isArray(includedReportSections)) return [...includedReportSections];
+			return reportSectionDefinitions().map(section => section.id);
+		}
+
+		function setReportSectionSelection(sectionIDs) {
+			const definitions = reportSectionDefinitions();
+			const selected = new Set(Array.isArray(sectionIDs) ? sectionIDs : definitions.map(section => section.id));
+			includedReportSections = definitions.map(section => section.id).filter(id => selected.has(id));
+			document.querySelectorAll('#reportSectionChoices input[data-report-section]').forEach(choice => {
+				choice.checked = selected.has(choice.dataset.reportSection);
+			});
+		}
+
+		function initializeReportSectionChoices() {
+			const container = document.getElementById('reportSectionChoices');
+			if (!container) return;
+			container.replaceChildren();
+			reportSectionDefinitions().forEach(section => {
+				const label = document.createElement('label');
+				label.className = 'report-section-choice flex cursor-pointer items-center gap-3 rounded-xl px-3 py-3 text-sm';
+				const input = document.createElement('input');
+				input.type = 'checkbox'; input.checked = true; input.dataset.reportSection = section.id;
+				const text = document.createElement('span'); text.textContent = section.label;
+				label.append(input, text); container.appendChild(label);
+			});
+			setReportSectionSelection(includedReportSections);
+		}
+
+		function setExportFilter(root, includedSections) {
+			const scope = root.body || root;
+			const included = new Set(includedSections);
+			scope.dataset.exportFiltered = 'true';
+			scope.querySelectorAll('[data-export-section]').forEach(section => {
+				section.classList.toggle('is-export-excluded', !included.has(section.dataset.exportSection));
+			});
+		}
+
+		function clearExportFilter(root) {
+			const scope = root.body || root;
+			delete scope.dataset.exportFiltered;
+			scope.querySelectorAll('[data-export-section].is-export-excluded').forEach(section => section.classList.remove('is-export-excluded'));
 		}
 
 		function applyReportMetadata(metadata = {}) {
@@ -925,10 +998,11 @@
 			document.getElementById('reportNotes').classList.toggle('hidden', !metadata.notes);
 			reportLogoDataURL = metadata.logo_data_url || '';
 			const logo = document.getElementById('reportLogo'); logo.src = reportLogoDataURL; logo.classList.toggle('hidden', !reportLogoDataURL);
-			document.getElementById('reportTitleInput').value = title;
-			document.getElementById('reportCustomerInput').value = metadata.customer_name || '';
-			document.getElementById('reportPreparedInput').value = metadata.prepared_by || '';
-			document.getElementById('reportNotesInput').value = metadata.notes || '';
+			const titleInput = document.getElementById('reportTitleInput'); if (titleInput) titleInput.value = title;
+			const customerInput = document.getElementById('reportCustomerInput'); if (customerInput) customerInput.value = metadata.customer_name || '';
+			const preparedInput = document.getElementById('reportPreparedInput'); if (preparedInput) preparedInput.value = metadata.prepared_by || '';
+			const notesInput = document.getElementById('reportNotesInput'); if (notesInput) notesInput.value = metadata.notes || '';
+			setReportSectionSelection(Array.isArray(metadata.included_sections) ? metadata.included_sections : null);
 			document.getElementById('reportGeneratedAt').textContent = `Generated ${new Date().toLocaleString()}`;
 		}
 
@@ -938,7 +1012,8 @@
 				customer_name: document.getElementById('reportCustomerInput').value.trim(),
 				prepared_by: document.getElementById('reportPreparedInput').value.trim(),
 				notes: document.getElementById('reportNotesInput').value.trim(),
-				logo_data_url: reportLogoDataURL
+				logo_data_url: reportLogoDataURL,
+				included_sections: selectedReportSectionIDs()
 			};
 		}
 
@@ -981,6 +1056,133 @@
 			image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(source)}`;
 		}
 
+		function synchronizeRenderedValues(sourceNodes, cloneNodes) {
+			sourceNodes.forEach((source, index) => {
+				const clone = cloneNodes[index];
+				if (!clone) return;
+				if (source instanceof HTMLInputElement) {
+					clone.setAttribute('value', source.value);
+					if (source.checked) clone.setAttribute('checked', ''); else clone.removeAttribute('checked');
+				} else if (source instanceof HTMLTextAreaElement) {
+					clone.textContent = source.value;
+				} else if (source instanceof HTMLSelectElement) {
+					[...clone.options].forEach((option, optionIndex) => {
+						if (source.options[optionIndex]?.selected) option.setAttribute('selected', ''); else option.removeAttribute('selected');
+					});
+				}
+			});
+		}
+
+		function inlineRenderedStyles(sourceNodes, cloneNodes) {
+			sourceNodes.forEach((source, index) => {
+				const clone = cloneNodes[index];
+				if (!clone || !(source instanceof Element)) return;
+				const computed = window.getComputedStyle(source);
+				for (const property of computed) clone.style.setProperty(property, computed.getPropertyValue(property), computed.getPropertyPriority(property));
+			});
+		}
+
+		function replaceImageControlsWithContext(source, clone) {
+			const sourceSelects = [...source.querySelectorAll('select')];
+			clone.querySelectorAll('select').forEach((select, index) => {
+				const sourceSelect = sourceSelects[index];
+				const values = [...(sourceSelect?.selectedOptions || [])].map(option => option.textContent.trim()).filter(Boolean);
+				const value = document.createElement('span');
+				value.textContent = values.length ? values.join(', ') : 'All';
+				value.style.display = 'block'; value.style.fontWeight = '700'; value.style.marginTop = '0.35rem';
+				select.replaceWith(value);
+			});
+			clone.querySelectorAll('.no-export button').forEach(button => button.remove());
+			clone.querySelectorAll('.no-export').forEach(group => {
+				if (!group.textContent.trim() && !group.querySelector('img, svg')) group.remove();
+			});
+		}
+
+		async function sectionImageSVG(section) {
+			const wasCollapsed = section.classList.contains('is-auto-collapsed');
+			if (wasCollapsed && window.ITTSections) window.ITTSections.apply(section, false, false);
+			try {
+				if (document.fonts?.ready) await document.fonts.ready;
+				await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+				const bounds = section.getBoundingClientRect();
+				const width = Math.max(1, Math.ceil(bounds.width));
+				const height = Math.max(1, Math.ceil(section.scrollHeight));
+				const clone = section.cloneNode(true);
+				const sourceNodes = [section, ...section.querySelectorAll('*')];
+				const cloneNodes = [clone, ...clone.querySelectorAll('*')];
+				synchronizeRenderedValues(sourceNodes, cloneNodes);
+				inlineRenderedStyles(sourceNodes, cloneNodes);
+				replaceImageControlsWithContext(section, clone);
+				clone.querySelectorAll('.auto-collapse-toolbar').forEach(toolbar => toolbar.remove());
+				clone.classList.remove('is-auto-collapsed', 'is-export-excluded');
+				clone.removeAttribute('hidden');
+				clone.style.setProperty('box-sizing', 'border-box');
+				clone.style.setProperty('height', `${height}px`);
+				clone.style.setProperty('margin', '0');
+				clone.style.setProperty('width', `${width}px`);
+				clone.querySelectorAll('[hidden]').forEach(element => {
+					if (element.classList.contains('auto-collapse-content')) element.removeAttribute('hidden');
+				});
+				const wrapper = document.createElement('div');
+				wrapper.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml');
+				wrapper.style.background = getComputedStyle(document.body).backgroundColor || '#ffffff';
+				wrapper.style.height = `${height}px`; wrapper.style.width = `${width}px`;
+				wrapper.appendChild(clone);
+				const serialized = new XMLSerializer().serializeToString(wrapper);
+				return {width, height, source: `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><foreignObject width="100%" height="100%">${serialized}</foreignObject></svg>`};
+			} finally {
+				if (wasCollapsed && window.ITTSections) window.ITTSections.apply(section, true, false);
+			}
+		}
+
+		async function downloadSectionImage(sectionID, button) {
+			const section = [...document.querySelectorAll('[data-image-section]')].find(item => item.dataset.imageSection === sectionID);
+			if (!section || button?.disabled) return;
+			const previousLabel = button?.textContent || 'PNG';
+			if (button) { button.disabled = true; button.textContent = 'Rendering…'; }
+			try {
+				const rendered = await sectionImageSVG(section);
+				const image = new Image();
+				await new Promise((resolve, reject) => { image.onload = resolve; image.onerror = () => reject(new Error('Browser could not render this section')); image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(rendered.source)}`; });
+				const maxDimension = 8192;
+				const scale = Math.max(1, Math.min(2, maxDimension / rendered.width, maxDimension / rendered.height));
+				const canvas = document.createElement('canvas');
+				canvas.width = Math.round(rendered.width * scale); canvas.height = Math.round(rendered.height * scale);
+				const context = canvas.getContext('2d');
+				context.drawImage(image, 0, 0, canvas.width, canvas.height);
+				const png = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+				if (!png) throw new Error('Browser could not encode the section image');
+				downloadBlob(png, `${reportBaseName()}-${sectionID}.png`);
+			} catch (error) {
+				const message = document.getElementById('reportConfigMessage');
+				if (message) message.textContent = `Section image failed: ${error.message}`;
+			} finally {
+				if (button) { button.disabled = false; button.textContent = previousLabel; }
+			}
+		}
+
+		function initializeSectionImageActions() {
+			document.querySelectorAll('[data-image-section]').forEach(section => {
+				const toolbar = section.querySelector(':scope > .auto-collapse-toolbar');
+				const collapseButton = toolbar?.querySelector('.auto-collapse-toggle');
+				if (!toolbar || !collapseButton) return;
+				let actions = toolbar.querySelector('.auto-collapse-actions');
+				if (!actions) {
+					actions = document.createElement('span'); actions.className = 'auto-collapse-actions';
+					toolbar.appendChild(actions); actions.appendChild(collapseButton);
+				}
+				let button = actions.querySelector('.section-image-button');
+				if (!button) {
+					button = document.createElement('button'); button.type = 'button'; button.className = 'section-image-button'; button.textContent = 'Export PNG';
+					actions.insertBefore(button, collapseButton);
+				}
+				if (!button.__ittImageBound) {
+					button.__ittImageBound = true;
+					button.addEventListener('click', () => downloadSectionImage(section.dataset.imageSection, button));
+				}
+			});
+		}
+
 		function downloadMonthlyCSV() {
 			const rows = latestExecutivePayload?.insights?.monthly_port_protocol || [];
 			const cells = [['Month','Protocol','Port','Flows','Unique Connections','Active Connections'], ...rows.map(row => [row.month,row.protocol,row.port,row.flow_count,row.unique_connections,row.active_connections])];
@@ -990,9 +1192,10 @@
 
 		function printExecutiveReport() {
 			const previousTheme = document.body.dataset.theme;
+			setExportFilter(document, selectedReportSectionIDs());
 			applyTheme('illumio-light');
 			renderTrendCharts();
-			const restore = () => { applyTheme(previousTheme); renderTrendCharts(); window.removeEventListener('afterprint', restore); };
+			const restore = () => { clearExportFilter(document); applyTheme(previousTheme); renderTrendCharts(); window.removeEventListener('afterprint', restore); };
 			window.addEventListener('afterprint', restore);
 			window.print();
 			window.setTimeout(restore, 1500);
@@ -1001,16 +1204,28 @@
 		async function downloadExecutiveHTML() {
 			const previousTheme = document.body.dataset.theme;
 			try {
+				const selectedSections = selectedReportSectionIDs();
 				applyTheme('illumio-light');
 				renderTrendCharts();
 				const cssParts = [...document.querySelectorAll('style')].map(style => style.textContent);
 				for (const link of document.querySelectorAll('link[rel="stylesheet"]')) {
 					try { cssParts.push(await (await fetch(link.href)).text()); } catch (_) {}
 				}
+				let collapsibleSource = '';
+				try { collapsibleSource = await (await fetch('/assets/collapsible.js')).text(); } catch (_) {}
+				const reportSource = [...document.scripts].find(script => !script.src && script.textContent.includes('function renderExecutiveSummary'))?.textContent || '';
+				const exportPayload = structuredClone(latestExecutivePayload || {});
+				exportPayload.report_metadata = {...(exportPayload.report_metadata || {}), included_sections: selectedSections};
+				const embeddedPayload = JSON.stringify(exportPayload).replaceAll('<', '\\u003c');
 				const body = document.body.cloneNode(true);
 				body.dataset.theme = 'illumio-light';
-				body.querySelectorAll('.no-export, .app-header-actions, script').forEach(node => node.remove());
-				const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(document.getElementById('reportTitle').textContent)}</title><style>${cssParts.join('\n')}</style></head>${body.outerHTML}</html>`;
+				body.dataset.collapseScope = 'exported-executive-report';
+				setExportFilter(body, selectedSections);
+				body.querySelectorAll('.app-nav, .app-header-action, [data-offline-remove], script').forEach(node => node.remove());
+				const closingScriptPrefix = '<' + '/script';
+				const scripts = `<script>window.__ITT_EXECUTIVE_PAYLOAD__=${embeddedPayload};<\/script><script>${collapsibleSource.replaceAll(closingScriptPrefix, '<\\/script')}<\/script><script>${reportSource.replaceAll(closingScriptPrefix, '<\\/script')}<\/script>`;
+				const bodyHTML = body.outerHTML.replace('</body>', `${scripts}</body>`);
+				const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(document.getElementById('reportTitle').textContent)}</title><style>${cssParts.join('\n')}</style></head>${bodyHTML}</html>`;
 				downloadBlob(new Blob([html], {type: 'text/html;charset=utf-8'}), `${reportBaseName()}.html`);
 			} finally {
 				applyTheme(previousTheme);
@@ -1380,6 +1595,12 @@
             const fileLabel = document.getElementById('fileLabel');
             fileLabel.innerText = 'Loading latest analytics...';
             try {
+				if (window.__ITT_EXECUTIVE_PAYLOAD__) {
+					document.getElementById('emptyState').classList.add('hidden');
+					document.getElementById('content').classList.remove('hidden');
+					renderExecutiveSummary(window.__ITT_EXECUTIVE_PAYLOAD__);
+					return;
+				}
 				const res = await fetch(`/api/results/summary?t=${Date.now()}`, {cache: 'no-store'});
                 const data = await res.json();
                 if (!data.summary || data.summary.length === 0) {
@@ -1401,17 +1622,22 @@
 
         window.onload = () => {
             loadSavedTheme();
-            document.getElementById('defaultThemeBtn').addEventListener('click', () => applyTheme('default'));
-            document.getElementById('illumioThemeBtn').addEventListener('click', () => applyTheme('illumio'));
-            document.getElementById('illumioLightThemeBtn').addEventListener('click', () => applyTheme('illumio-light'));
-            document.getElementById('refreshExecutiveBtn').addEventListener('click', loadExecutiveSummary);
-			document.getElementById('printExecutiveBtn').addEventListener('click', printExecutiveReport);
-			document.getElementById('downloadExecutiveHTMLBtn').addEventListener('click', downloadExecutiveHTML);
-			document.getElementById('saveReportMetadataBtn').addEventListener('click', saveReportMetadata);
-			document.getElementById('downloadMonthlyCSVBtn').addEventListener('click', downloadMonthlyCSV);
-			document.getElementById('clearReportLogoBtn').addEventListener('click', () => { reportLogoDataURL = ''; document.getElementById('reportLogoInput').value = ''; previewReportMetadata(); });
-			['reportTitleInput', 'reportCustomerInput', 'reportPreparedInput', 'reportNotesInput'].forEach(id => document.getElementById(id).addEventListener('input', previewReportMetadata));
-			document.getElementById('reportLogoInput').addEventListener('change', event => {
+			initializeReportSectionChoices();
+			initializeSectionImageActions();
+			const bind = (id, event, handler) => { const element = document.getElementById(id); if (element) element.addEventListener(event, handler); };
+			bind('defaultThemeBtn', 'click', () => applyTheme('default'));
+			bind('illumioThemeBtn', 'click', () => applyTheme('illumio'));
+			bind('illumioLightThemeBtn', 'click', () => applyTheme('illumio-light'));
+			bind('refreshExecutiveBtn', 'click', loadExecutiveSummary);
+			bind('printExecutiveBtn', 'click', printExecutiveReport);
+			bind('downloadExecutiveHTMLBtn', 'click', downloadExecutiveHTML);
+			bind('saveReportMetadataBtn', 'click', saveReportMetadata);
+			bind('downloadMonthlyCSVBtn', 'click', downloadMonthlyCSV);
+			bind('selectAllReportSectionsBtn', 'click', () => setReportSectionSelection(null));
+			bind('clearReportSectionsBtn', 'click', () => setReportSectionSelection([]));
+			bind('clearReportLogoBtn', 'click', () => { reportLogoDataURL = ''; const input = document.getElementById('reportLogoInput'); if (input) input.value = ''; previewReportMetadata(); });
+			['reportTitleInput', 'reportCustomerInput', 'reportPreparedInput', 'reportNotesInput'].forEach(id => bind(id, 'input', previewReportMetadata));
+			bind('reportLogoInput', 'change', event => {
 				const file = event.target.files?.[0];
 				if (!file) return;
 				if (file.size > 600 * 1024) { document.getElementById('reportConfigMessage').textContent = 'Logo must be 600 KB or smaller.'; event.target.value = ''; return; }
@@ -1420,16 +1646,16 @@
 				reader.onload = () => { reportLogoDataURL = String(reader.result || ''); previewReportMetadata(); document.getElementById('reportConfigMessage').textContent = 'Logo loaded. Save report settings to retain it.'; };
 				reader.readAsDataURL(file);
 			});
-			document.getElementById('trendRangeSelect').addEventListener('change', renderTrendCharts);
-			document.getElementById('serviceTrendSelect').addEventListener('change', renderTrendCharts);
-			document.getElementById('relationshipTrendSelect').addEventListener('change', renderTrendCharts);
+			bind('trendRangeSelect', 'change', renderTrendCharts);
+			bind('serviceTrendSelect', 'change', renderTrendCharts);
+			bind('relationshipTrendSelect', 'change', renderTrendCharts);
 			const selectTop = (id, count) => { [...document.getElementById(id).options].forEach((option, index) => { option.selected = index < count; }); renderTrendCharts(); };
-			document.getElementById('selectTopServicesBtn').addEventListener('click', () => selectTop('serviceTrendSelect', 5));
-			document.getElementById('clearServicesBtn').addEventListener('click', () => selectTop('serviceTrendSelect', 0));
-			document.getElementById('selectTopRelationshipsBtn').addEventListener('click', () => selectTop('relationshipTrendSelect', 5));
-			document.getElementById('clearRelationshipsBtn').addEventListener('click', () => selectTop('relationshipTrendSelect', 0));
-			document.getElementById('comparisonStartMonth').addEventListener('change', renderPeriodComparison);
-			document.getElementById('comparisonEndMonth').addEventListener('change', renderPeriodComparison);
+			bind('selectTopServicesBtn', 'click', () => selectTop('serviceTrendSelect', 5));
+			bind('clearServicesBtn', 'click', () => selectTop('serviceTrendSelect', 0));
+			bind('selectTopRelationshipsBtn', 'click', () => selectTop('relationshipTrendSelect', 5));
+			bind('clearRelationshipsBtn', 'click', () => selectTop('relationshipTrendSelect', 0));
+			bind('comparisonStartMonth', 'change', renderPeriodComparison);
+			bind('comparisonEndMonth', 'change', renderPeriodComparison);
 			document.querySelectorAll('[data-chart-download]').forEach(button => button.addEventListener('click', () => downloadChart(button.dataset.chartDownload, button.dataset.format)));
             loadExecutiveSummary();
         };
