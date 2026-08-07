@@ -75,10 +75,10 @@ Build all supported release binaries with:
 The build script derives a version from Git tags and writes it into both the application footer and executable filenames. Release automation can set an exact version explicitly:
 
 ```bash
-ITT_VERSION=v1.5.0-rc.4 ./scripts/build_release.sh
+ITT_VERSION=v1.5.0 ./scripts/build_release.sh
 ```
 
-Versioned outputs use names such as `IllumioTrafficTool_v1.5.0-rc.4_Linux` and `IllumioTrafficTool_v1.5.0-rc.4_Windows.exe`. Compatibility copies with the original unversioned names are generated locally for existing shortcuts and scripts.
+Versioned outputs use names such as `IllumioTrafficTool_v1.5.0_Linux` and `IllumioTrafficTool_v1.5.0_Windows.exe`. Compatibility copies with the original unversioned names are generated locally for existing shortcuts and scripts.
 
 Generated binaries, credentials, CSV exports, and logs are excluded by `.gitignore`.
 
