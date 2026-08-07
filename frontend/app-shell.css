@@ -2,6 +2,43 @@ html {
     scrollbar-gutter: stable;
 }
 
+.app-version-footer {
+    position: fixed;
+    bottom: 0.9rem;
+    left: 0.9rem;
+    z-index: 40;
+    display: inline-flex;
+    max-width: calc(100vw - 1.8rem);
+    align-items: center;
+    gap: 0.45rem;
+    border: 1px solid var(--border);
+    border-radius: 9999px;
+    background: color-mix(in srgb, var(--panel) 92%, transparent);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+    color: var(--muted);
+    padding: 0.45rem 0.7rem;
+    font-size: 0.67rem;
+    font-weight: 650;
+    line-height: 1;
+    backdrop-filter: blur(12px);
+}
+
+.app-version-product {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.app-version-value {
+    flex: 0 0 auto;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+}
+
+.app-version-separator {
+    color: var(--accent);
+}
+
 .app-header {
     align-items: flex-start;
 }
@@ -165,6 +202,12 @@ body[data-theme="illumio-light"] .theme-button[data-theme-option="illumio-light"
     text-transform: uppercase;
 }
 
+.standalone-image-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 0.75rem;
+}
+
 .auto-collapse-toggle:hover,
 .auto-collapse-toggle:focus-visible,
 .section-image-button:hover,
@@ -190,6 +233,7 @@ body[data-theme="illumio-light"] .theme-button[data-theme-option="illumio-light"
 }
 
 @media print {
+    .app-version-footer,
     .auto-collapse-toolbar {
         display: none !important;
     }

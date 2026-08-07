@@ -32,8 +32,12 @@ import (
 	"github.com/pkg/browser"
 )
 
-//go:embed frontend/*.html frontend/tailwind.css frontend/app-shell.css frontend/theme-init.js frontend/collapsible.js
+//go:embed frontend/*.html frontend/tailwind.css frontend/app-shell.css frontend/theme-init.js frontend/collapsible.js frontend/app-version.js
 var staticFiles embed.FS
+
+// appVersion is replaced by scripts/build_release.sh using -ldflags. Source
+// builds keep an explicit development label so the UI never implies a release.
+var appVersion = "development"
 
 type PCEProfile struct {
 	Name              string `json:"name"`
@@ -714,6 +718,19 @@ func serveEmbeddedAsset(w http.ResponseWriter, r *http.Request, fileName, conten
 	_, _ = w.Write(data)
 }
 
+func handleVersion(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+	version := strings.TrimSpace(appVersion)
+	if version == "" {
+		version = "development"
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	_ = json.NewEncoder(w).Encode(map[string]string{"version": version})
+}
+
 func main() {
 	defaultPort := envOrDefault("ITT_PORT", "8080")
 	defaultOpenBrowser := boolEnvOrDefault("ITT_OPEN_BROWSER", true)
@@ -786,6 +803,9 @@ func main() {
 	mux.HandleFunc("/assets/collapsible.js", func(w http.ResponseWriter, r *http.Request) {
 		serveEmbeddedAsset(w, r, "frontend/collapsible.js", "text/javascript; charset=utf-8")
 	})
+	mux.HandleFunc("/assets/app-version.js", func(w http.ResponseWriter, r *http.Request) {
+		serveEmbeddedAsset(w, r, "frontend/app-version.js", "text/javascript; charset=utf-8")
+	})
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
 			http.NotFound(w, r)
@@ -827,6 +847,7 @@ func main() {
 	})
 
 	mux.HandleFunc("/api/test", handleTest)
+	mux.HandleFunc("/api/version", handleVersion)
 	mux.HandleFunc("/api/traffic-db-metrics", handleTrafficDBMetrics)
 	mux.HandleFunc("/api/discovery", handleDiscovery)
 	mux.HandleFunc("/api/start", handleStart)
@@ -857,6 +878,7 @@ func main() {
 	localURL := fmt.Sprintf("http://localhost:%s", validatedPort)
 
 	fmt.Printf("Starting Illumio Traffic Tool on %s\n", listenAddr)
+	fmt.Printf("Version: %s\n", appVersion)
 	fmt.Printf("Local access URL: %s\n", localURL)
 	if *openBrowser {
 		go func() {

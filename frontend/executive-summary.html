@@ -192,6 +192,31 @@
         a.panel-soft, button.panel-soft {
             color: var(--text) !important;
         }
+		body[data-theme="default"],
+		body[data-theme="illumio"] {
+			color-scheme: dark;
+		}
+		body[data-theme="illumio-light"] {
+			color-scheme: light;
+		}
+		input:not([type="checkbox"]):not([type="file"]),
+		select,
+		textarea {
+			background-color: var(--panel-strong);
+			border-color: var(--border);
+			color: var(--text);
+		}
+		select option {
+			background-color: var(--panel-strong);
+			color: var(--text);
+		}
+		input:not([type="checkbox"]):not([type="file"]):focus-visible,
+		select:focus-visible,
+		textarea:focus-visible {
+			border-color: var(--accent);
+			outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
+			outline-offset: 1px;
+		}
         body[data-theme="illumio-light"] .label {
             color: #64686a;
         }
@@ -350,25 +375,25 @@
 
         <div id="content" class="hidden space-y-8">
             <section class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                <div class="panel rounded-3xl p-5">
+                <div class="panel rounded-3xl p-5" data-image-section="latest-observed-flows">
                     <p class="label">Latest Month</p>
                     <h2 class="headline mt-2 text-lg font-bold">Observed Flows</h2>
                     <p id="latestMonthFlows" class="metric-accent metric-value-sm mt-4 font-extrabold">0</p>
                     <p id="latestMonthLabel" class="muted mt-2 text-sm">No monthly data</p>
                 </div>
-                <div class="panel rounded-3xl p-5">
+                <div class="panel rounded-3xl p-5" data-image-section="latest-active-connections">
                     <p class="label">Latest Month</p>
                     <h2 class="headline mt-2 text-lg font-bold">Active Connections</h2>
                     <p id="latestMonthActive" class="metric-secondary metric-value-sm mt-4 font-extrabold">0</p>
                     <p id="latestMonthActiveLabel" class="muted mt-2 text-sm">Persistence across month spans</p>
                 </div>
-                <div class="panel rounded-3xl p-5">
+                <div class="panel rounded-3xl p-5" data-image-section="month-over-month-flow-change">
                     <p class="label">Month over Month</p>
                     <h2 class="headline mt-2 text-lg font-bold">Flow Change</h2>
                     <p id="monthOverMonthFlows" class="metric-tertiary metric-value-sm mt-4 font-extrabold">0%</p>
                     <p id="monthOverMonthFlowsLabel" class="muted mt-2 text-sm">Compared with previous month</p>
                 </div>
-                <div class="panel rounded-3xl p-5">
+                <div class="panel rounded-3xl p-5" data-image-section="latest-new-service-pairs">
                     <p class="label">What Changed</p>
                     <h2 class="headline mt-2 text-lg font-bold">New Service Pairs</h2>
                     <p id="newServicePairs" class="metric-warning metric-value-sm mt-4 font-extrabold">0</p>
@@ -481,6 +506,7 @@
         </div>
     </div>
 
+    <script src="/assets/app-version.js"></script>
     <script src="/assets/collapsible.js"></script>
     <script>
 		let primaryDimensionName = 'Environment';
@@ -542,9 +568,15 @@
             ['udp:3702', 'WSD']
         ]);
 
+		function themeStorageKey() {
+			if (typeof window.__ITT_EXECUTIVE_THEME__ !== 'string') return 'ittTheme';
+			const source = String(window.__ITT_EXECUTIVE_PAYLOAD__?.fileName || 'offline-report').slice(0, 160);
+			return `ittExecutiveTheme:${source}:${document.title}`;
+		}
+
         function applyTheme(theme) {
             document.body.dataset.theme = theme;
-            localStorage.setItem('ittTheme', theme);
+			try { localStorage.setItem(themeStorageKey(), theme); } catch (_) {}
 			const defaultButton = document.getElementById('defaultThemeBtn');
 			const illumioButton = document.getElementById('illumioThemeBtn');
 			const lightButton = document.getElementById('illumioLightThemeBtn');
@@ -554,10 +586,14 @@
             document.querySelectorAll('[data-theme-option]').forEach((button) => {
                 button.setAttribute('aria-pressed', String(button.dataset.themeOption === theme));
             });
+			if (latestExecutivePayload) renderTrendCharts();
         }
 
         function loadSavedTheme() {
-            applyTheme(localStorage.getItem('ittTheme') || 'default');
+			const embeddedTheme = typeof window.__ITT_EXECUTIVE_THEME__ === 'string' ? window.__ITT_EXECUTIVE_THEME__ : '';
+            let savedTheme = embeddedTheme || 'default';
+			try { savedTheme = localStorage.getItem(themeStorageKey()) || savedTheme; } catch (_) {}
+			applyTheme(savedTheme);
         }
 
         function formatNumber(value) {
@@ -1106,7 +1142,10 @@
 				await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 				const bounds = section.getBoundingClientRect();
 				const width = Math.max(1, Math.ceil(bounds.width));
-				const height = Math.max(1, Math.ceil(section.scrollHeight));
+				const exportActions = section.querySelector(':scope > .auto-collapse-toolbar, :scope > .standalone-image-actions');
+				const actionStyle = exportActions ? getComputedStyle(exportActions) : null;
+				const actionHeight = exportActions ? exportActions.getBoundingClientRect().height + parseFloat(actionStyle.marginTop || 0) + parseFloat(actionStyle.marginBottom || 0) : 0;
+				const height = Math.max(1, Math.ceil(section.scrollHeight - actionHeight));
 				const clone = section.cloneNode(true);
 				const sourceNodes = [section, ...section.querySelectorAll('*')];
 				const cloneNodes = [clone, ...clone.querySelectorAll('*')];
@@ -1165,16 +1204,24 @@
 			document.querySelectorAll('[data-image-section]').forEach(section => {
 				const toolbar = section.querySelector(':scope > .auto-collapse-toolbar');
 				const collapseButton = toolbar?.querySelector('.auto-collapse-toggle');
-				if (!toolbar || !collapseButton) return;
-				let actions = toolbar.querySelector('.auto-collapse-actions');
-				if (!actions) {
-					actions = document.createElement('span'); actions.className = 'auto-collapse-actions';
-					toolbar.appendChild(actions); actions.appendChild(collapseButton);
+				let actions;
+				if (toolbar && collapseButton) {
+					actions = toolbar.querySelector('.auto-collapse-actions');
+					if (!actions) {
+						actions = document.createElement('span'); actions.className = 'auto-collapse-actions';
+						toolbar.appendChild(actions); actions.appendChild(collapseButton);
+					}
+				} else {
+					actions = section.querySelector(':scope > .standalone-image-actions');
+					if (!actions) {
+						actions = document.createElement('div'); actions.className = 'standalone-image-actions no-export';
+						section.insertBefore(actions, section.firstChild);
+					}
 				}
 				let button = actions.querySelector('.section-image-button');
 				if (!button) {
 					button = document.createElement('button'); button.type = 'button'; button.className = 'section-image-button'; button.textContent = 'Export PNG';
-					actions.insertBefore(button, collapseButton);
+					if (collapseButton) actions.insertBefore(button, collapseButton); else actions.appendChild(button);
 				}
 				if (!button.__ittImageBound) {
 					button.__ittImageBound = true;
@@ -1194,19 +1241,16 @@
 			const previousTheme = document.body.dataset.theme;
 			setExportFilter(document, selectedReportSectionIDs());
 			applyTheme('illumio-light');
-			renderTrendCharts();
-			const restore = () => { clearExportFilter(document); applyTheme(previousTheme); renderTrendCharts(); window.removeEventListener('afterprint', restore); };
+			const restore = () => { clearExportFilter(document); applyTheme(previousTheme); window.removeEventListener('afterprint', restore); };
 			window.addEventListener('afterprint', restore);
 			window.print();
 			window.setTimeout(restore, 1500);
 		}
 
 		async function downloadExecutiveHTML() {
-			const previousTheme = document.body.dataset.theme;
-			try {
-				const selectedSections = selectedReportSectionIDs();
-				applyTheme('illumio-light');
-				renderTrendCharts();
+			const selectedSections = selectedReportSectionIDs();
+			const exportTheme = document.body.dataset.theme || 'default';
+			renderTrendCharts();
 				const cssParts = [...document.querySelectorAll('style')].map(style => style.textContent);
 				for (const link of document.querySelectorAll('link[rel="stylesheet"]')) {
 					try { cssParts.push(await (await fetch(link.href)).text()); } catch (_) {}
@@ -1217,20 +1261,17 @@
 				const exportPayload = structuredClone(latestExecutivePayload || {});
 				exportPayload.report_metadata = {...(exportPayload.report_metadata || {}), included_sections: selectedSections};
 				const embeddedPayload = JSON.stringify(exportPayload).replaceAll('<', '\\u003c');
+				const embeddedTheme = JSON.stringify(exportTheme).replaceAll('<', '\\u003c');
 				const body = document.body.cloneNode(true);
-				body.dataset.theme = 'illumio-light';
+				body.dataset.theme = exportTheme;
 				body.dataset.collapseScope = 'exported-executive-report';
 				setExportFilter(body, selectedSections);
 				body.querySelectorAll('.app-nav, .app-header-action, [data-offline-remove], script').forEach(node => node.remove());
 				const closingScriptPrefix = '<' + '/script';
-				const scripts = `<script>window.__ITT_EXECUTIVE_PAYLOAD__=${embeddedPayload};<\/script><script>${collapsibleSource.replaceAll(closingScriptPrefix, '<\\/script')}<\/script><script>${reportSource.replaceAll(closingScriptPrefix, '<\\/script')}<\/script>`;
+				const scripts = `<script>window.__ITT_EXECUTIVE_PAYLOAD__=${embeddedPayload};window.__ITT_EXECUTIVE_THEME__=${embeddedTheme};<\/script><script>${collapsibleSource.replaceAll(closingScriptPrefix, '<\\/script')}<\/script><script>${reportSource.replaceAll(closingScriptPrefix, '<\\/script')}<\/script>`;
 				const bodyHTML = body.outerHTML.replace('</body>', `${scripts}</body>`);
 				const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(document.getElementById('reportTitle').textContent)}</title><style>${cssParts.join('\n')}</style></head>${bodyHTML}</html>`;
 				downloadBlob(new Blob([html], {type: 'text/html;charset=utf-8'}), `${reportBaseName()}.html`);
-			} finally {
-				applyTheme(previousTheme);
-				renderTrendCharts();
-			}
 		}
 
         function latestMonthSummary(monthlyRows) {

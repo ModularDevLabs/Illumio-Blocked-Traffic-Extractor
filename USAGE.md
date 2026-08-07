@@ -125,10 +125,11 @@ This page is intended for leadership or slide-friendly review and highlights:
 
 It uses the same underlying analytics dataset as `/summary`, but presents it in a simpler executive format.
 It also includes the shared app theme toggle so you can switch between `Dark`, `Illumio Dark`, and `Illumio Light`.
+Every workspace shows the running application version in a small fixed footer at the lower left. Release binaries embed the same version that appears in their filename.
 
-Report configuration can add a customer name, title, prepared-by value, notes, and an optional logo. These values stay with a saved dataset. The **Export Composer** lets you include or omit each executive content section from **Export PDF / Print** and **Download HTML** output without hiding it from the live dashboard; the selection is retained with the report settings. Every executive section also has its own **Export PNG** action for presentation-ready image reuse. Chart controls can still download individual SVG and PNG charts, and **Download Monthly Data CSV** exports the trend rows for further analysis.
+Report configuration can add a customer name, title, prepared-by value, notes, and an optional logo. These values stay with a saved dataset. The **Export Composer** lets you include or omit each executive content section from **Export PDF / Print** and **Download HTML** output without hiding it from the live dashboard; the selection is retained with the report settings. Every executive section and each of the four latest-period metric cards has its own **Export PNG** action for presentation-ready image reuse. Chart controls can still download individual SVG and PNG charts, and **Download Monthly Data CSV** exports the trend rows for further analysis.
 
-The self-contained HTML report keeps its theme, chart range, service, relationship, collapse, and per-section image controls without requiring the application to be running. Sections omitted by the Export Composer remain excluded from that offline report.
+The self-contained HTML report opens with the theme and dataset identity from its source dashboard. Theme changes redraw the charts immediately and are remembered separately for that offline report. Chart range, service, relationship, collapse, and per-section image controls continue to work without the application running. Sections omitted by the Export Composer remain excluded from that offline report.
 
 ## 9. CSV Re-Import
 The analytics page can rebuild its visuals from one or more previously exported CSVs from this tool. Multiple files are stitched into one analytics dataset, while their timestamp months remain available in the monthly trend views.

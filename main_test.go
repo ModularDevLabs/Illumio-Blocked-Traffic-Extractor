@@ -866,6 +866,9 @@ func TestApplicationHeadersUseConsistentNavigationAndThemeControls(t *testing.T)
 		if !strings.Contains(html, `<script src="/assets/collapsible.js"></script>`) {
 			t.Fatalf("%s does not load the shared collapsible-section behavior", page.file)
 		}
+		if !strings.Contains(html, `<script src="/assets/app-version.js"></script>`) {
+			t.Fatalf("%s does not load the shared application-version footer", page.file)
+		}
 		if !strings.Contains(html, `data-auto-collapsible=`) {
 			t.Fatalf("%s does not expose any collapsible sections", page.file)
 		}
@@ -901,6 +904,11 @@ func TestExecutiveHTMLExportKeepsOfflineInteractions(t *testing.T) {
 		"setExportFilter(body, selectedSections)",
 		"initializeSectionImageActions()",
 		"downloadSectionImage(section.dataset.imageSection, button)",
+		"window.__ITT_EXECUTIVE_THEME__",
+		"body.dataset.theme = exportTheme",
+		"if (latestExecutivePayload) renderTrendCharts()",
+		"background-color: var(--panel-strong)",
+		"color-scheme: dark",
 	} {
 		if !strings.Contains(html, expected) {
 			t.Fatalf("executive HTML export is missing offline behavior %q", expected)
@@ -912,8 +920,8 @@ func TestExecutiveHTMLExportKeepsOfflineInteractions(t *testing.T) {
 	if count := strings.Count(html, `data-export-section=`); count != len(executiveReportSectionOrder) {
 		t.Fatalf("executive report exposes %d selectable sections, want %d", count, len(executiveReportSectionOrder))
 	}
-	if count := strings.Count(html, `data-image-section=`); count != len(executiveReportSectionOrder)+1 {
-		t.Fatalf("executive report exposes %d image sections, want %d", count, len(executiveReportSectionOrder)+1)
+	if count := strings.Count(html, `data-image-section=`); count != len(executiveReportSectionOrder)+5 {
+		t.Fatalf("executive report exposes %d image sections, want %d", count, len(executiveReportSectionOrder)+5)
 	}
 	collapsible, err := staticFiles.ReadFile("frontend/collapsible.js")
 	if err != nil {
@@ -921,6 +929,49 @@ func TestExecutiveHTMLExportKeepsOfflineInteractions(t *testing.T) {
 	}
 	if !strings.Contains(string(collapsible), "window.ITTSections = { initialize, apply }") {
 		t.Fatal("shared collapsible behavior does not expose offline initialization")
+	}
+}
+
+func TestHandleVersionReportsBuildVersion(t *testing.T) {
+	previousVersion := appVersion
+	appVersion = "v9.8.7-test"
+	t.Cleanup(func() { appVersion = previousVersion })
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/version", nil)
+	handleVersion(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("handleVersion status = %d", recorder.Code)
+	}
+	if got := recorder.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("version Cache-Control = %q", got)
+	}
+	var payload map[string]string
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload["version"] != "v9.8.7-test" {
+		t.Fatalf("version payload = %#v", payload)
+	}
+
+	methodRecorder := httptest.NewRecorder()
+	handleVersion(methodRecorder, httptest.NewRequest(http.MethodPost, "/api/version", nil))
+	if methodRecorder.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("POST version status = %d", methodRecorder.Code)
+	}
+}
+
+func TestApplicationVersionFooterUsesVersionAPI(t *testing.T) {
+	t.Parallel()
+	content, err := staticFiles.ReadFile("frontend/app-version.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(content)
+	for _, expected := range []string{"app-version-footer", "payload.version", "'/api/version'"} {
+		if !strings.Contains(source, expected) {
+			t.Fatalf("application version footer is missing %q", expected)
+		}
 	}
 }
 
