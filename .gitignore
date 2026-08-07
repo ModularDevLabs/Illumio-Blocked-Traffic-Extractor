@@ -4,6 +4,10 @@ IllumioTrafficTool_Linux
 IllumioTrafficTool_Windows.exe
 IllumioTrafficTool_MacOS_Intel
 IllumioTrafficTool_MacOS_AppleSilicon
+IllumioTrafficTool_*_Linux
+IllumioTrafficTool_*_Windows.exe
+IllumioTrafficTool_*_MacOS_Intel
+IllumioTrafficTool_*_MacOS_AppleSilicon
 SESSION_NOTES.md
 .DS_Store
 Thumbs.db
