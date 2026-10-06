@@ -1,7 +1,7 @@
 # Design Document: Illumio Blocked Traffic Extractor
 
 ## 1. Objective
-To provide a stable, cross-platform standalone tool that extracts "Reported Policy Decision: Blocked" traffic from the Illumio PCE for either a user-selected number of trailing days or an explicit inclusive date range. The tool segments queries into 1-day chunks to ensure PCE stability and avoid API timeouts, merges the results into a structured CSV, and exposes an in-app analytics dashboard for review.
+To provide a stable, cross-platform standalone tool that extracts blocked-only or all-policy-decision traffic from the Illumio PCE for either trailing days or an explicit inclusive date range. The tool segments queries into configurable chunks, merges results into a structured CSV, and exposes in-app analytics. Blocked-only remains the default for existing profiles and templates.
 
 ## 2. Technical Architecture
 - **Language:** Go (Golang) - Compiled to single binaries for Windows, Linux, and MacOS.
@@ -27,15 +27,17 @@ To provide a stable, cross-platform standalone tool that extracts "Reported Poli
 - **Automation:** Populates a live-search/autocomplete cache in the browser memory to prevent user typos and ensure query validity.
 
 ### 3.2. Traffic Extraction Engine
-- **Decision Filter:** Strictly filters for `policy_decisions: ["blocked"]`.
+- **Decision Filter:** Blocked scope uses `policy_decisions: ["blocked"]`; all scope removes that restriction. Policy and draft decisions are retained in CSV rows without inflating unique-connection counts.
 - **Chronological Sequencing:** Uses a worker pool (3 concurrent slots) to process the requested date window from the end of the selected range backwards in configurable time chunks.
 - **Chunk Sizing:** The extraction window can be split into configurable chunks from `1 day` down to `5 minutes`, while the final CSV still merges matching connections across the full requested range.
 - **PCE Schema Compliance:** Ensures all mandatory fields (`query_name`, `services`, `exclude`) are present in every request to prevent HTTP 406 errors.
 - **Resilience:** Automatic cooldown on HTTP 429 responses, bounded query-creation retries, per-chunk deadlines, bounded chunk retries, and a 24-hour overall run deadline.
-- **Completeness Guarantee:** If any chunk ultimately fails, extraction aborts and no partial CSV is reported as successful.
+- **Streaming Downloads:** Traffic-result JSON is decoded one row at a time without a fixed total-byte limit or a second full raw response buffer. Control/metadata responses remain bounded. Chunk contexts govern traffic-download timeouts; progress logs include decoded HTTP-body bytes and row counts. Aggregated results still consume memory.
+- **Truncation Recovery:** Proven PCE result-row truncation recursively splits the affected time window with bounded depth/minimum duration. Failed parent responses are never committed; each successful leaf window is committed once. Control-response size errors do not trigger subdivision.
+- **Partial Recovery:** Unrecoverable windows do not cancel unrelated chunks. Cancellation/deadline/failure finalizes successfully completed windows into an explicitly marked partial CSV and manifest. No successful windows means no CSV. Durable CSV output is preserved even if subsequent metadata/report generation fails. The status endpoint sets `done` only after finalization; a cancellation request is not terminal.
 - **Reusable Runner:** Interactive, queued, scheduled, and `--run-template` executions share the same validated extraction path. The persistent worker serializes jobs and waits for an active interactive run instead of overlapping it.
 - **Restart Recovery:** Queued jobs survive restarts; a job left in `running` state is marked failed with an interruption reason. Schedule policy determines whether one missed run is queued after startup or skipped.
-- **Service Filtering:** Supports both Illumio service references and direct protocol/port filters such as `TCP:445` and `UDP:5355`.
+- **Service Filtering:** Inclusion and exclusion both support Illumio service references and direct protocol/port filters such as `TCP:445` and `UDP:5355`.
 - **Selector Hardening:** Unknown source, destination, and exclusion values are only treated as IP filters when they parse as valid IP/CIDR values; otherwise they are skipped and logged as warnings.
 - **Connection Test:** The UI connection check uses a lightweight authenticated API request rather than a full discovery collection load.
 - **Traffic DB Metrics:** The main page can query the PCE traffic flow database metrics endpoint and show current server retention days plus the oldest retained server-flow day.
@@ -66,6 +68,7 @@ To provide a stable, cross-platform standalone tool that extracts "Reported Poli
 - **Templates:** Store filters, selected analytics dimensions, rolling lookback, chunking, filename tokens, output location, retention, schedule, alert policy, and destination references. Template export excludes IDs, timestamps, credentials, and destination associations; imports start disabled so local profiles and destinations can be reviewed before activation.
 - **Schedules:** Daily, weekdays, weekly, monthly, and standard five-field cron schedules run in an explicit IANA timezone. Monthly schedules intentionally limit the day to 1–28 for deterministic behavior.
 - **Artifacts:** Scheduled filenames support `{template}`, `{date}`, `{time}`, `{timestamp}`, and `{run_id}`. Creation and delivery refuse overwrites. Retention deletes only absolute artifact paths recorded for that same template.
+- **Incomplete Runs:** Partial runs retain CSV/coverage artifacts and failure information, but not success metrics, baseline eligibility, executive reports, or success delivery. Coverage manifests are tracked for local download/retention, not automatically delivered to destinations. Failed report generation preserves an already complete CSV.
 - **Change Detection:** Each successful run records flow totals, external traffic, primary relationships, and protocol/port pairs. The next run derives flow percentage change plus newly observed relationships and services for conditional alerts.
 - **Boundary Classification:** General top destinations and external/unmanaged destinations are maintained as separate aggregates. External destination rankings contain only records whose destination endpoint lacks workload classification; unmanaged sources do not cause a managed destination to enter that list.
 - **Delivery Adapters:** Generic JSON/multipart webhooks, Slack incoming-webhook messages, Slack external file upload, Teams Workflow Adaptive Cards with optional base64 file data, TLS-capable SMTP attachments, shared-folder copies, and SFTP uploads.
@@ -74,6 +77,8 @@ To provide a stable, cross-platform standalone tool that extracts "Reported Poli
 ## 4. CSV Schema
 The CSV is dynamically structured based on the PCE's label keys:
 `First Detected` | `Last Detected` | `Source IP` | `Src [Key1]` | `Src [Key2]`... | `Destination IP` | `Dst [Key1]`... | `Port` | `Protocol` | `Flows`
+
+Exports also retain policy/draft decisions and an `Extraction Status` marker for partial runs. The companion `.extraction.json` manifest records requested, completed, and missing windows. Imported partial markers propagate into dataset coverage warnings, including when the CSV filename changes.
 
 - **Protocol Mapping:** Resolves IANA numbers to names (e.g., 6 -> TCP, 17 -> UDP, 58 -> ICMPv6).
 - **Label Alignment:** Dynamically creates columns for every label key found in the result set (Role, App, Env, Loc, etc.).

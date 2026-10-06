@@ -20,10 +20,14 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v6
         with:
-          go-version: 1.26.5
+          go-version: 1.26.8
           cache: true
       - run: go test ./...
       - run: go vet ./...
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node --test scripts/tests/extraction-status.test.cjs
       - if: runner.os == 'Linux'
         run: go test -race ./...
 
@@ -34,7 +38,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v6
         with:
-          go-version: 1.26.5
+          go-version: 1.26.8
           cache: true
       - run: go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
       - run: govulncheck ./...

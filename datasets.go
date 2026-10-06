@@ -51,7 +51,10 @@ type DatasetOverlap struct {
 }
 
 type DatasetCoverage struct {
+	Partial             bool                  `json:"partial,omitempty"`
+	MissingWindows      []ExtractionWindow    `json:"missing_windows,omitempty"`
 	Source              string                `json:"source"`
+	TrafficScope        string                `json:"traffic_scope"`
 	Files               []DatasetFileCoverage `json:"files"`
 	FirstDetected       time.Time             `json:"first_detected,omitempty"`
 	LastDetected        time.Time             `json:"last_detected,omitempty"`
@@ -202,7 +205,7 @@ func validateReportMetadata(metadata ReportMetadata) (ReportMetadata, error) {
 		}
 	}
 	if metadata.Title == "" {
-		metadata.Title = "Blocked Traffic Executive Summary"
+		metadata.Title = "Traffic Executive Summary"
 	}
 	return metadata, nil
 }
@@ -289,6 +292,7 @@ func (manager *DatasetManager) delete(id string) error {
 }
 
 func normalizeCoverage(coverage DatasetCoverage) DatasetCoverage {
+	coverage.TrafficScope = normalizedTrafficScope(coverage.TrafficScope)
 	monthSet := map[string]bool{}
 	for _, file := range coverage.Files {
 		for _, month := range file.Months {

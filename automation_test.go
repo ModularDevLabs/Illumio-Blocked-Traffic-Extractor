@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -269,22 +270,17 @@ func TestGenericWebhookMultipartDelivery(t *testing.T) {
 }
 
 func TestAutomationStorePermissionsAndRestartRecovery(t *testing.T) {
-	configRoot := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", configRoot)
+	path := filepath.Join(t.TempDir(), "automation.json")
 	store := automationStoreData{
 		Version:      automationStoreVersion,
 		Templates:    map[string]ReportTemplate{"tpl": {ID: "tpl", Name: "Stored"}},
 		Destinations: map[string]DeliveryDestination{},
 		Runs:         []AutomationRun{{ID: "running", Status: "running"}, {ID: "queued", Status: "queued"}},
 	}
-	path, err := automationStorePath()
-	if err != nil {
-		t.Fatal(err)
-	}
 	if err := writePrivateJSON(path, store); err != nil {
 		t.Fatal(err)
 	}
-	manager := &AutomationManager{}
+	manager := &AutomationManager{storePath: path}
 	if err := manager.load(); err != nil {
 		t.Fatal(err)
 	}
@@ -298,14 +294,14 @@ func TestAutomationStorePermissionsAndRestartRecovery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Mode().Perm() != 0600 {
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0600 {
 		t.Fatalf("automation store permissions = %o, want 600", info.Mode().Perm())
 	}
 	store.Version = automationStoreVersion + 1
 	if err := writePrivateJSON(path, store); err != nil {
 		t.Fatal(err)
 	}
-	if err := (&AutomationManager{}).load(); err == nil || !strings.Contains(err.Error(), "newer") {
+	if err := (&AutomationManager{storePath: path}).load(); err == nil || !strings.Contains(err.Error(), "newer") {
 		t.Fatalf("future store version error = %v", err)
 	}
 }
@@ -427,9 +423,9 @@ func TestTemplateValidationRejectsExcessiveChunkCount(t *testing.T) {
 }
 
 func TestSchedulerQueuesMissedRunAndAdvancesSchedule(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	now := time.Date(2026, time.August, 5, 12, 0, 0, 0, time.UTC)
 	manager := &AutomationManager{
+		storePath: filepath.Join(t.TempDir(), "automation.json"),
 		data: automationStoreData{
 			Version: automationStoreVersion,
 			Templates: map[string]ReportTemplate{"tpl": {
@@ -520,7 +516,7 @@ func TestScheduledExecutiveArtifactsAreValidAndPrivate(t *testing.T) {
 		if statErr != nil {
 			t.Fatalf("stat artifact %s: %v", path, statErr)
 		}
-		if info.Mode().Perm() != 0o600 {
+		if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 			t.Fatalf("artifact %s mode = %v", path, info.Mode().Perm())
 		}
 	}

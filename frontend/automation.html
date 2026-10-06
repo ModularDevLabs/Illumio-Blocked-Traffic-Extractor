@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Automation - Illumio Blocked Traffic Extractor</title>
+    <title>Automation - Illumio Traffic Extractor</title>
     <link rel="stylesheet" href="/assets/tailwind.css">
     <style>
         :root {
@@ -76,7 +76,7 @@
         .theme-button { border:1px solid var(--border); background:var(--panel-soft); color:var(--muted); }
         .theme-button.active { background:color-mix(in srgb,var(--accent) 14%,transparent); color:var(--text); border-color:var(--accent); }
         #messageBar { background:var(--panel-soft); color:var(--text); }
-        .status-completed { color:var(--accent); } .status-failed { color:var(--danger); } .status-running { color:var(--title); } .status-queued { color:var(--warn); }
+        .status-completed { color:var(--accent); } .status-partial { color:var(--warn); } .status-failed { color:var(--danger); } .status-running { color:var(--title); } .status-queued { color:var(--warn); }
         summary { cursor:pointer; }
     </style>
     <link rel="stylesheet" href="/assets/app-shell.css">
@@ -126,9 +126,10 @@
 
             <form id="templateForm" class="mt-6 space-y-6">
                 <input id="templateId" type="hidden">
-                <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
                     <label class="text-sm">Template Name<input id="templateName" required maxlength="120" class="mt-1 w-full rounded-lg px-3 py-2" placeholder="Weekly BU Report"></label>
                     <label class="text-sm">PCE Profile<select id="templateProfile" required class="mt-1 w-full rounded-lg px-3 py-2"></select></label>
+                    <label class="text-sm">Traffic Scope<select id="templateTrafficScope" class="mt-1 w-full rounded-lg px-3 py-2"><option value="blocked">Blocked traffic only</option><option value="all">All policy decisions</option></select></label>
                     <label class="text-sm">Primary Dimension<input id="templatePrimary" class="mt-1 w-full rounded-lg px-3 py-2" value="env"></label>
                     <label class="text-sm">Secondary Dimension<input id="templateSecondary" class="mt-1 w-full rounded-lg px-3 py-2" value="app"></label>
                 </div>
@@ -137,12 +138,13 @@
                     <label class="text-sm">Destinations<input id="templateDestinations" class="mt-1 w-full rounded-lg px-3 py-2" placeholder="Role: Database"></label>
                     <label class="text-sm">Source Exclusions<input id="templateExcludeSources" class="mt-1 w-full rounded-lg px-3 py-2"></label>
                     <label class="text-sm">Destination Exclusions<input id="templateExcludeDestinations" class="mt-1 w-full rounded-lg px-3 py-2"></label>
-                    <label class="text-sm md:col-span-2">Services<input id="templateServices" class="mt-1 w-full rounded-lg px-3 py-2" placeholder="TCP:445, SSH"></label>
+                    <label class="text-sm">Services<input id="templateServices" class="mt-1 w-full rounded-lg px-3 py-2" placeholder="TCP:445, SSH"></label>
+					<label class="text-sm">Service Exclusions<input id="templateExcludeServices" class="mt-1 w-full rounded-lg px-3 py-2" placeholder="DNS, TCP:22"></label>
                 </div>
                 <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
                     <label class="text-sm xl:col-span-2">Output Folder<input id="templateSavePath" required class="mt-1 w-full rounded-lg px-3 py-2" placeholder="/absolute/report/path"></label>
                     <label class="text-sm xl:col-span-2">Filename Pattern<input id="templateFilePattern" class="mt-1 w-full rounded-lg px-3 py-2" value="blocked-{template}-{date}-{time}.csv"><span class="muted mt-1 block text-xs">Tokens: {template}, {date}, {time}, {timestamp}, {run_id}</span></label>
-                    <label class="text-sm">Keep Artifacts<input id="templateRetention" type="number" min="1" max="1000" value="20" class="mt-1 w-full rounded-lg px-3 py-2"></label>
+                    <label class="text-sm">Keep Recent Run Artifacts<input id="templateRetention" type="number" min="1" max="1000" value="20" class="mt-1 w-full rounded-lg px-3 py-2"><span class="muted mt-1 block text-xs">Counts completed, partial, and failed runs that retain a CSV.</span></label>
                     <label class="text-sm">Trailing Days<input id="templateDays" type="number" min="1" value="90" class="mt-1 w-full rounded-lg px-3 py-2"></label>
                     <label class="text-sm">Chunk Interval<select id="templateChunk" class="mt-1 w-full rounded-lg px-3 py-2"><option value="24h">1 day</option><option value="12h">12 hours</option><option value="6h">6 hours</option><option value="3h">3 hours</option><option value="1h">1 hour</option><option value="30m">30 minutes</option><option value="10m">10 minutes</option><option value="5m">5 minutes</option></select></label>
                 </div>
@@ -329,6 +331,7 @@
             document.getElementById('templateForm').reset();
             document.getElementById('templateId').value = '';
             document.getElementById('templatePrimary').value = 'env'; document.getElementById('templateSecondary').value = 'app';
+			document.getElementById('templateTrafficScope').value = 'blocked';
             document.getElementById('templateDays').value = 90; document.getElementById('templateChunk').value = '24h';
             document.getElementById('templateRetention').value = 20; document.getElementById('templateFilePattern').value = 'blocked-{template}-{date}-{time}.csv';
 			document.getElementById('templateExecutiveHTML').checked = true; document.getElementById('templateExecutivePDF').checked = true;
@@ -343,7 +346,8 @@
             const profile = profiles[document.getElementById('templateProfile').value]; if (!profile) return;
             document.getElementById('templateSources').value = profile.src_labels || ''; document.getElementById('templateDestinations').value = profile.dst_labels || '';
             document.getElementById('templateExcludeSources').value = profile.exclude_src || ''; document.getElementById('templateExcludeDestinations').value = profile.exclude_dst || '';
-            document.getElementById('templateServices').value = profile.services || ''; document.getElementById('templateSavePath').value = profile.save_path || '';
+            document.getElementById('templateServices').value = profile.services || ''; document.getElementById('templateExcludeServices').value = profile.exclude_services || ''; document.getElementById('templateSavePath').value = profile.save_path || '';
+			document.getElementById('templateTrafficScope').value = profile.traffic_scope || 'blocked';
             document.getElementById('templateDays').value = profile.days || 90; document.getElementById('templateChunk').value = profile.chunk_interval || '24h';
             document.getElementById('templatePrimary').value = profile.analysis_primary_label || 'env'; document.getElementById('templateSecondary').value = profile.analysis_secondary_label || 'app';
         }
@@ -351,8 +355,9 @@
         function loadTemplate(id) {
             const template = automationState.templates.find(item => item.id === id); if (!template) { resetTemplateForm(); return; }
             document.getElementById('templateId').value = template.id; document.getElementById('templateName').value = template.name; document.getElementById('templateProfile').value = template.profile_name;
-            document.getElementById('templateSources').value = template.src_labels || ''; document.getElementById('templateDestinations').value = template.dst_labels || ''; document.getElementById('templateExcludeSources').value = template.exclude_src || ''; document.getElementById('templateExcludeDestinations').value = template.exclude_dst || ''; document.getElementById('templateServices').value = template.services || '';
+            document.getElementById('templateSources').value = template.src_labels || ''; document.getElementById('templateDestinations').value = template.dst_labels || ''; document.getElementById('templateExcludeSources').value = template.exclude_src || ''; document.getElementById('templateExcludeDestinations').value = template.exclude_dst || ''; document.getElementById('templateServices').value = template.services || ''; document.getElementById('templateExcludeServices').value = template.exclude_services || '';
             document.getElementById('templateSavePath').value = template.save_path || ''; document.getElementById('templateFilePattern').value = template.file_name_pattern || ''; document.getElementById('templateDays').value = template.days || 90; document.getElementById('templateChunk').value = template.chunk_interval || '24h'; document.getElementById('templatePrimary').value = template.analysis_primary_label || 'env'; document.getElementById('templateSecondary').value = template.analysis_secondary_label || 'app'; document.getElementById('templateRetention').value = template.retention_count || 20;
+			document.getElementById('templateTrafficScope').value = template.traffic_scope || 'blocked';
 			document.getElementById('templateExecutiveHTML').checked = Boolean(template.generate_executive_html); document.getElementById('templateExecutivePDF').checked = Boolean(template.generate_executive_pdf); document.getElementById('templateReportTitle').value = template.report_title || ''; document.getElementById('templateReportCustomer').value = template.report_customer || ''; document.getElementById('templateReportPrepared').value = template.report_prepared_by || ''; document.getElementById('templateReportNotes').value = template.report_notes || '';
             const schedule = template.schedule || {}; document.getElementById('scheduleEnabled').checked = Boolean(schedule.enabled); document.getElementById('scheduleKind').value = schedule.kind || 'daily'; document.getElementById('scheduleTime').value = schedule.time_of_day || '06:00'; document.getElementById('scheduleTimezone').value = schedule.timezone || automationState.timezone; document.getElementById('scheduleWeekday').value = String(schedule.weekday || 0); document.getElementById('scheduleDay').value = schedule.day_of_month || 1; document.getElementById('scheduleCron').value = schedule.cron_expression || ''; document.getElementById('scheduleMissed').value = schedule.missed_run_policy || 'run_once'; document.getElementById('scheduleOverlap').value = schedule.overlap_policy || 'queue'; document.getElementById('nextRunLabel').textContent = schedule.next_run_at ? `Next run: ${new Date(schedule.next_run_at).toLocaleString()}` : 'Schedule disabled.';
             const alert = template.alert_policy || {}; document.getElementById('alertMode').value = alert.mode || 'always'; document.getElementById('alertMinimumFlows').value = alert.minimum_flows || 0; document.getElementById('alertFlowChange').value = alert.flow_change_percent || 0; document.getElementById('alertNewRelationships').checked = Boolean(alert.on_new_relationships); document.getElementById('alertNewServices').checked = Boolean(alert.on_new_services); document.getElementById('alertExternal').checked = Boolean(alert.on_external_traffic); document.getElementById('alertFailure').checked = Boolean(alert.deliver_on_failure); document.getElementById('alertManual').checked = Boolean(alert.deliver_manual_runs);
@@ -360,7 +365,7 @@
         }
 
         function templateFromForm() {
-            return { id: document.getElementById('templateId').value, name: document.getElementById('templateName').value, profile_name: document.getElementById('templateProfile').value, src_labels: document.getElementById('templateSources').value, dst_labels: document.getElementById('templateDestinations').value, exclude_src: document.getElementById('templateExcludeSources').value, exclude_dst: document.getElementById('templateExcludeDestinations').value, services: document.getElementById('templateServices').value, save_path: document.getElementById('templateSavePath').value, file_name_pattern: document.getElementById('templateFilePattern').value, days: Number(document.getElementById('templateDays').value), chunk_interval: document.getElementById('templateChunk').value, analysis_primary_label: document.getElementById('templatePrimary').value, analysis_secondary_label: document.getElementById('templateSecondary').value, retention_count: Number(document.getElementById('templateRetention').value), generate_executive_html: document.getElementById('templateExecutiveHTML').checked, generate_executive_pdf: document.getElementById('templateExecutivePDF').checked, report_title: document.getElementById('templateReportTitle').value, report_customer: document.getElementById('templateReportCustomer').value, report_prepared_by: document.getElementById('templateReportPrepared').value, report_notes: document.getElementById('templateReportNotes').value, delivery_destination_ids: Array.from(document.querySelectorAll('[data-destination-choice]:checked')).map(input => input.value), schedule: { enabled: document.getElementById('scheduleEnabled').checked, kind: document.getElementById('scheduleKind').value, time_of_day: document.getElementById('scheduleTime').value, weekday: Number(document.getElementById('scheduleWeekday').value), day_of_month: Number(document.getElementById('scheduleDay').value), cron_expression: document.getElementById('scheduleCron').value, timezone: document.getElementById('scheduleTimezone').value, missed_run_policy: document.getElementById('scheduleMissed').value, overlap_policy: document.getElementById('scheduleOverlap').value }, alert_policy: { mode: document.getElementById('alertMode').value, minimum_flows: Number(document.getElementById('alertMinimumFlows').value), flow_change_percent: Number(document.getElementById('alertFlowChange').value), on_new_relationships: document.getElementById('alertNewRelationships').checked, on_new_services: document.getElementById('alertNewServices').checked, on_external_traffic: document.getElementById('alertExternal').checked, deliver_on_failure: document.getElementById('alertFailure').checked, deliver_manual_runs: document.getElementById('alertManual').checked } };
+            return { id: document.getElementById('templateId').value, name: document.getElementById('templateName').value, profile_name: document.getElementById('templateProfile').value, traffic_scope: document.getElementById('templateTrafficScope').value || 'blocked', src_labels: document.getElementById('templateSources').value, dst_labels: document.getElementById('templateDestinations').value, exclude_src: document.getElementById('templateExcludeSources').value, exclude_dst: document.getElementById('templateExcludeDestinations').value, services: document.getElementById('templateServices').value, exclude_services: document.getElementById('templateExcludeServices').value, save_path: document.getElementById('templateSavePath').value, file_name_pattern: document.getElementById('templateFilePattern').value, days: Number(document.getElementById('templateDays').value), chunk_interval: document.getElementById('templateChunk').value, analysis_primary_label: document.getElementById('templatePrimary').value, analysis_secondary_label: document.getElementById('templateSecondary').value, retention_count: Number(document.getElementById('templateRetention').value), generate_executive_html: document.getElementById('templateExecutiveHTML').checked, generate_executive_pdf: document.getElementById('templateExecutivePDF').checked, report_title: document.getElementById('templateReportTitle').value, report_customer: document.getElementById('templateReportCustomer').value, report_prepared_by: document.getElementById('templateReportPrepared').value, report_notes: document.getElementById('templateReportNotes').value, delivery_destination_ids: Array.from(document.querySelectorAll('[data-destination-choice]:checked')).map(input => input.value), schedule: { enabled: document.getElementById('scheduleEnabled').checked, kind: document.getElementById('scheduleKind').value, time_of_day: document.getElementById('scheduleTime').value, weekday: Number(document.getElementById('scheduleWeekday').value), day_of_month: Number(document.getElementById('scheduleDay').value), cron_expression: document.getElementById('scheduleCron').value, timezone: document.getElementById('scheduleTimezone').value, missed_run_policy: document.getElementById('scheduleMissed').value, overlap_policy: document.getElementById('scheduleOverlap').value }, alert_policy: { mode: document.getElementById('alertMode').value, minimum_flows: Number(document.getElementById('alertMinimumFlows').value), flow_change_percent: Number(document.getElementById('alertFlowChange').value), on_new_relationships: document.getElementById('alertNewRelationships').checked, on_new_services: document.getElementById('alertNewServices').checked, on_external_traffic: document.getElementById('alertExternal').checked, deliver_on_failure: document.getElementById('alertFailure').checked, deliver_manual_runs: document.getElementById('alertManual').checked } };
         }
 
         async function saveTemplate(event) { event.preventDefault(); try { const data = await requestJSON('/api/automation/templates/save', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(templateFromForm()) }); await loadState(false); document.getElementById('templateSelect').value = data.template.id; loadTemplate(data.template.id); showMessage(`Template '${data.template.name}' saved.`); } catch (error) { showMessage(error.message, true); } }
@@ -386,14 +391,17 @@
 			automationState.runs.forEach(run => {
 				const row = document.createElement('tr'); row.className = 'border-b';
 				const delivery = (run.delivery_results || []).map(result => `${result.destination_name}: ${result.success ? 'sent' : 'failed'}`).join(', ') || run.delivery_skipped || '—';
-				const changes = `${(run.metrics?.new_relationships || []).length} relationships / ${(run.metrics?.new_services || []).length} services`;
+				const completed = run.status === 'completed';
+				const changes = completed ? `${(run.metrics?.new_relationships || []).length} relationships / ${(run.metrics?.new_services || []).length} services` : '—';
 				row.innerHTML = `<td class="px-3 py-3"></td><td class="px-3 py-3"></td><td class="px-3 py-3 font-semibold"></td><td class="px-3 py-3"></td><td class="px-3 py-3"></td><td class="px-3 py-3"></td><td class="px-3 py-3"></td><td class="px-3 py-3"></td>`;
-				const cells = row.querySelectorAll('td'); cells[0].textContent = run.template_name; cells[1].textContent = run.trigger; cells[2].textContent = run.status + (run.error ? `: ${run.error}` : ''); cells[2].classList.add(`status-${run.status}`); cells[3].textContent = new Date(run.queued_at).toLocaleString(); cells[4].textContent = Number(run.metrics?.total_flows || 0).toLocaleString(); cells[5].textContent = changes; cells[6].textContent = delivery;
+				const cells = row.querySelectorAll('td'); cells[0].textContent = run.template_name; cells[1].textContent = run.trigger; cells[2].textContent = run.status + (run.error ? `: ${run.error}` : ''); cells[2].classList.add(`status-${run.status}`); cells[3].textContent = new Date(run.queued_at).toLocaleString(); cells[4].textContent = completed ? Number(run.metrics?.total_flows || 0).toLocaleString() : '—'; cells[5].textContent = changes; cells[6].textContent = delivery;
 				if (run.artifact_path) {
 					cells[7].classList.add('space-y-1');
 					const addLink = (kind, label) => { const link = document.createElement('a'); link.className = 'block underline'; link.href = `/api/automation/runs/artifact?id=${encodeURIComponent(run.id)}&kind=${kind}`; link.textContent = label; cells[7].appendChild(link); };
-					addLink('csv', 'Download CSV');
+					const csvLabel = run.status === 'partial' ? 'Download partial CSV' : run.status === 'failed' ? 'Download retained CSV' : 'Download CSV';
+					addLink('csv', csvLabel);
 					const extensions = new Set((run.additional_artifact_paths || []).map(path => path.split('.').pop().toLowerCase()));
+					if ((run.additional_artifact_paths || []).some(path => path.toLowerCase().endsWith('.extraction.json'))) addLink('coverage', 'Download coverage manifest');
 					if (extensions.has('html')) addLink('html', 'Download HTML');
 					if (extensions.has('pdf')) addLink('pdf', 'Download PDF');
 				}

@@ -1,6 +1,6 @@
 # Illumio Blocked Traffic Extractor
 
-A local desktop-style Go application for extracting blocked traffic from an Illumio PCE, exporting it as CSV, and reviewing the results through detailed, heatmap, and executive analytics views.
+A local desktop-style Go application for extracting blocked traffic or all traffic from an Illumio PCE, exporting it as CSV, and reviewing the results through detailed, heatmap, and executive analytics views. Blocked-only remains the default. Service exclusions accept PCE service names or explicit protocol/port filters and are available in both interactive queries and report templates.
 
 Analytics dimensions are configurable from the PCE's discovered label types. The traditional `env` and `app` views remain the defaults, while custom keys such as `BU`, `region`, or `division` can be selected as the primary or secondary dimension and are carried through profiles, dashboards, heatmaps, executive summaries, and CSV re-import. Multiple CSV exports can be imported into named, reusable datasets with coverage-gap and overlap detection, combined analysis, month-over-month charts, multi-service and relationship selectors, and period comparisons.
 
@@ -16,7 +16,7 @@ Saved PCE profiles are stored in the current user's OS configuration directory w
 
 Requirements:
 
-- Go 1.25 or newer; the module pins the patched Go 1.26.5 toolchain for builds
+- Go 1.26 or newer; the module pins the patched Go 1.26.8 toolchain for builds
 - Network access from the local machine to the Illumio PCE
 
 ```bash
@@ -53,6 +53,7 @@ See [USAGE.md](USAGE.md) for the complete operator guide and [DESIGN.md](DESIGN.
 go test ./...
 go test -race ./...
 go vet ./...
+node --test scripts/tests/*.test.cjs
 govulncheck ./...
 ```
 
@@ -85,7 +86,10 @@ Generated binaries, credentials, CSV exports, and logs are excluded by `.gitigno
 ## Data integrity behavior
 
 - Every extraction chunk is retried with bounded attempts.
-- If any chunk ultimately fails, the run stops and does not create a partial CSV.
+- Traffic-result downloads are streamed without a fixed total-response-size cutoff. Logs show downloaded bytes and decoded rows; this size is not the final CSV size. Control/metadata responses still have a safety bound, and query deadlines remain in effect.
+- Queries that the PCE reports as exceeding its result-row limit are automatically split into smaller time windows. This cannot override server-side limits; an unrecoverable window is reported as missing.
+- If a chunk ultimately fails, other chunks continue. Completed windows are saved to a clearly marked `_PARTIAL.csv` if any windows succeeded, including on cancellation or the overall deadline. If none succeeded, no CSV is created.
+- Each extraction CSV has a companion `.extraction.json` coverage manifest with completed and missing windows. Partial analytics carry an incomplete-coverage warning: missing activity is unknown, not zero. Partial scheduled runs are retained for download but excluded from successful-report delivery and comparison baselines.
 - Existing output files are never overwritten.
 - CSV cells that spreadsheet applications could interpret as formulas are neutralized.
 - PCE `first_detected` and `last_detected` values are retained independently.

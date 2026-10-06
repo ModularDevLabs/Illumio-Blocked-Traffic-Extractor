@@ -50,6 +50,7 @@ type PCEProfile struct {
 	ExcludeSrc        string `json:"exclude_src"`
 	ExcludeDst        string `json:"exclude_dst"`
 	Services          string `json:"services"`
+	ExcludeServices   string `json:"exclude_services"`
 	SavePath          string `json:"save_path"`
 	FileName          string `json:"file_name"`
 	Days              int    `json:"days"`
@@ -58,6 +59,7 @@ type PCEProfile struct {
 	ChunkIntvl        string `json:"chunk_interval"`
 	AnalysisPrimary   string `json:"analysis_primary_label"`
 	AnalysisSecondary string `json:"analysis_secondary_label"`
+	TrafficScope      string `json:"traffic_scope"`
 }
 
 type PublicPCEProfile struct {
@@ -69,6 +71,7 @@ type PublicPCEProfile struct {
 	ExcludeSrc        string `json:"exclude_src"`
 	ExcludeDst        string `json:"exclude_dst"`
 	Services          string `json:"services"`
+	ExcludeServices   string `json:"exclude_services"`
 	SavePath          string `json:"save_path"`
 	FileName          string `json:"file_name"`
 	Days              int    `json:"days"`
@@ -77,6 +80,7 @@ type PublicPCEProfile struct {
 	ChunkIntvl        string `json:"chunk_interval"`
 	AnalysisPrimary   string `json:"analysis_primary_label"`
 	AnalysisSecondary string `json:"analysis_secondary_label"`
+	TrafficScope      string `json:"traffic_scope"`
 }
 
 func (profile PCEProfile) public() PublicPCEProfile {
@@ -89,6 +93,7 @@ func (profile PCEProfile) public() PublicPCEProfile {
 		ExcludeSrc:        profile.ExcludeSrc,
 		ExcludeDst:        profile.ExcludeDst,
 		Services:          profile.Services,
+		ExcludeServices:   profile.ExcludeServices,
 		SavePath:          profile.SavePath,
 		FileName:          profile.FileName,
 		Days:              profile.Days,
@@ -97,6 +102,7 @@ func (profile PCEProfile) public() PublicPCEProfile {
 		ChunkIntvl:        profile.ChunkIntvl,
 		AnalysisPrimary:   profile.AnalysisPrimary,
 		AnalysisSecondary: profile.AnalysisSecondary,
+		TrafficScope:      normalizedTrafficScope(profile.TrafficScope),
 	}
 }
 
@@ -106,6 +112,9 @@ type AppState struct {
 	RequestedDays    int
 	RequestedChunks  int
 	ChunkInterval    string
+	ActiveChunks     int
+	RunStartedAt     time.Time
+	LastProgressAt   time.Time
 	DiscoveryDone    int
 	DiscoveryTotal   int
 	DiscoveryActive  bool
@@ -113,6 +122,8 @@ type AppState struct {
 	Logs             []string
 	IsDone           bool
 	IsCancelled      bool
+	IsPartial        bool
+	FailedChunks     int
 	FileName         string
 	Profiles         map[string]PCEProfile
 	CancelFunc       context.CancelFunc
@@ -121,6 +132,7 @@ type AppState struct {
 	DatasetID        string
 	DatasetCoverage  DatasetCoverage
 	ReportMetadata   ReportMetadata
+	TrafficScope     string
 	DiscoveryCache   *DiscoveryData
 	DiscoveryKey     string
 	RunError         string
@@ -245,6 +257,10 @@ type AnalyticsRecord struct {
 	FlowCount      int
 	FirstSeen      time.Time
 	LastSeen       time.Time
+	PolicyDecision string
+	DraftDecision  string
+	TrafficScope   string
+	Partial        bool
 }
 
 type DiscoveryData struct {
@@ -287,6 +303,8 @@ func addLog(msg string) {
 func markRunFinished(fileName string, cancelled bool) {
 	state.Mu.Lock()
 	cancel := state.CancelFunc
+	state.ActiveChunks = 0
+	state.LastProgressAt = time.Now().UTC()
 	state.IsDone = true
 	state.IsCancelled = cancelled
 	state.FileName = fileName
@@ -1058,6 +1076,11 @@ func handleSaveProfile(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	prof.TrafficScope, err = normalizeTrafficScope(prof.TrafficScope)
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	state.Mu.Lock()
 	previous, existed := state.Profiles[prof.Name]
 	state.Mu.Unlock()
@@ -1141,6 +1164,7 @@ type Config struct {
 	ExcludeSrc        string `json:"exclude_src"`
 	ExcludeDst        string `json:"exclude_dst"`
 	Services          string `json:"services"`
+	ExcludeServices   string `json:"exclude_services"`
 	SavePath          string `json:"save_path"`
 	FileName          string `json:"file_name"`
 	Days              int    `json:"days"`
@@ -1149,6 +1173,44 @@ type Config struct {
 	ChunkIntvl        string `json:"chunk_interval"`
 	AnalysisPrimary   string `json:"analysis_primary_label"`
 	AnalysisSecondary string `json:"analysis_secondary_label"`
+	TrafficScope      string `json:"traffic_scope"`
+}
+
+const (
+	trafficScopeBlocked = "blocked"
+	trafficScopeAll     = "all"
+)
+
+func normalizedTrafficScope(scope string) string {
+	if strings.EqualFold(strings.TrimSpace(scope), trafficScopeAll) {
+		return trafficScopeAll
+	}
+	return trafficScopeBlocked
+}
+
+func normalizeTrafficScope(scope string) (string, error) {
+	scope = strings.ToLower(strings.TrimSpace(scope))
+	if scope == "" {
+		return trafficScopeBlocked, nil
+	}
+	if scope != trafficScopeBlocked && scope != trafficScopeAll {
+		return "", fmt.Errorf("traffic scope must be blocked or all")
+	}
+	return scope, nil
+}
+
+func policyDecisionsForScope(scope string) []string {
+	if normalizedTrafficScope(scope) == trafficScopeAll {
+		return []string{}
+	}
+	return []string{"blocked"}
+}
+
+func reportTitleForScope(scope string) string {
+	if normalizedTrafficScope(scope) == trafficScopeAll {
+		return "All Traffic Executive Summary"
+	}
+	return "Blocked Traffic Executive Summary"
 }
 
 func normalizeAnalysisLabelKeys(primary, secondary string) (string, string, error) {
@@ -1275,6 +1337,9 @@ func resolveConfigCredentials(cfg Config) (Config, error) {
 		if strings.TrimSpace(cfg.AnalysisSecondary) == "" {
 			cfg.AnalysisSecondary = profile.AnalysisSecondary
 		}
+		if strings.TrimSpace(cfg.TrafficScope) == "" {
+			cfg.TrafficScope = profile.TrafficScope
+		}
 	}
 
 	normalizedURL, err := validatePCEURL(cfg.PCEURL)
@@ -1291,6 +1356,10 @@ func resolveConfigCredentials(cfg Config) (Config, error) {
 		return Config{}, fmt.Errorf("PCE URL, Org ID, API Key, and API Secret are required")
 	}
 	cfg.AnalysisPrimary, cfg.AnalysisSecondary, err = normalizeAnalysisLabelKeys(cfg.AnalysisPrimary, cfg.AnalysisSecondary)
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.TrafficScope, err = normalizeTrafficScope(cfg.TrafficScope)
 	if err != nil {
 		return Config{}, err
 	}
@@ -1370,14 +1439,21 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 		"requestedDays":    state.RequestedDays,
 		"requestedChunks":  state.RequestedChunks,
 		"chunkInterval":    state.ChunkInterval,
+		"activeChunks":     state.ActiveChunks,
+		"runStartedAt":     state.RunStartedAt,
+		"lastProgressAt":   state.LastProgressAt,
 		"totalConnections": state.TotalConnections,
 		"newLogs":          state.Logs,
 		"done":             state.IsDone,
 		"cancelled":        state.IsCancelled,
+		"partial":          state.IsPartial,
+		"failedChunks":     state.FailedChunks,
 		"fileName":         state.FileName,
+		"error":            state.RunError,
 		"discoveryDone":    state.DiscoveryDone,
 		"discoveryTotal":   state.DiscoveryTotal,
 		"discoveryActive":  state.DiscoveryActive,
+		"trafficScope":     normalizedTrafficScope(state.TrafficScope),
 	}
 	state.Logs = []string{}
 	state.Mu.Unlock()
@@ -1399,6 +1475,7 @@ func handleSummary(w http.ResponseWriter, r *http.Request) {
 	datasetID := state.DatasetID
 	coverage := state.DatasetCoverage
 	reportMetadata := state.ReportMetadata
+	trafficScope := normalizedTrafficScope(state.TrafficScope)
 	state.Mu.Unlock()
 
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -1409,6 +1486,7 @@ func handleSummary(w http.ResponseWriter, r *http.Request) {
 		"insights":        insights,
 		"coverage":        coverage,
 		"report_metadata": reportMetadata,
+		"traffic_scope":   trafficScope,
 	})
 }
 
@@ -1731,7 +1809,7 @@ func parseCSVAnalyticsInputsDetailed(inputs []csvAnalyticsInput, primaryLabelKey
 	}
 
 	allRecords := []AnalyticsRecord{}
-	coverage := DatasetCoverage{Source: "csv_import", Files: make([]DatasetFileCoverage, 0, len(inputs))}
+	coverage := DatasetCoverage{Source: "csv_import", TrafficScope: trafficScopeBlocked, Files: make([]DatasetFileCoverage, 0, len(inputs))}
 	seenExactRecords := make(map[string]int)
 	for inputIndex, input := range inputs {
 		records, err := parseCSVAnalyticsRecords(input.Reader, input.Name, primaryLabelKey, secondaryLabelKey)
@@ -1739,8 +1817,13 @@ func parseCSVAnalyticsInputsDetailed(inputs []csvAnalyticsInput, primaryLabelKey
 			return parsedAnalyticsDataset{}, err
 		}
 		fileCoverage := DatasetFileCoverage{Name: input.Name, SHA256: input.SHA256, Size: input.Size, Rows: len(records)}
+		filePartial := strings.Contains(strings.ToUpper(filepath.Base(input.Name)), "_PARTIAL")
 		monthSet := map[string]bool{}
 		for _, record := range records {
+			filePartial = filePartial || record.Partial
+			if normalizedTrafficScope(record.TrafficScope) == trafficScopeAll || (record.PolicyDecision != "" && !strings.EqualFold(record.PolicyDecision, "blocked")) {
+				coverage.TrafficScope = trafficScopeAll
+			}
 			if fileCoverage.FirstDetected.IsZero() || (!record.FirstSeen.IsZero() && record.FirstSeen.Before(fileCoverage.FirstDetected)) {
 				fileCoverage.FirstDetected = record.FirstSeen
 			}
@@ -1753,6 +1836,10 @@ func parseCSVAnalyticsInputsDetailed(inputs []csvAnalyticsInput, primaryLabelKey
 			for _, month := range monthSpan(record.FirstSeen, record.LastSeen) {
 				monthSet[month] = true
 			}
+		}
+		if filePartial {
+			coverage.Partial = true
+			coverage.Warnings = append(coverage.Warnings, fmt.Sprintf("INCOMPLETE EXTRACTION: %s contains only successfully retrieved windows. Missing activity is unknown, not zero; consult its .extraction.json coverage file for the original gaps.", input.Name))
 		}
 		for month := range monthSet {
 			fileCoverage.Months = append(fileCoverage.Months, month)
@@ -1784,6 +1871,9 @@ func parseCSVAnalyticsInputsDetailed(inputs []csvAnalyticsInput, primaryLabelKey
 func importedAnalyticsRecordFingerprint(record AnalyticsRecord) string {
 	return strings.Join([]string{
 		record.Identity,
+		record.PolicyDecision,
+		record.DraftDecision,
+		normalizedTrafficScope(record.TrafficScope),
 		record.Month,
 		strconv.Itoa(record.FlowCount),
 		record.FirstSeen.UTC().Format(time.RFC3339Nano),
@@ -2011,6 +2101,10 @@ func parseCSVAnalyticsRecords(reader io.Reader, sourceName, primaryLabelKey, sec
 			FlowCount:      flowCount,
 			FirstSeen:      firstSeen,
 			LastSeen:       lastSeen,
+			PolicyDecision: strings.ToLower(strings.TrimSpace(getValue(row, "Policy Decision"))),
+			DraftDecision:  strings.ToLower(strings.TrimSpace(getValue(row, "Draft Policy Decision"))),
+			TrafficScope:   normalizedTrafficScope(getValue(row, "Traffic Scope")),
+			Partial:        strings.EqualFold(getValue(row, "Extraction Status"), "partial"),
 		})
 	}
 	return records, nil
@@ -2187,7 +2281,7 @@ func handleImportCSV(w http.ResponseWriter, r *http.Request) {
 	if len(fileNames) > 1 {
 		fileName = fmt.Sprintf("Imported CSV set: %d files", len(fileNames))
 	}
-	reportMetadata := ReportMetadata{Title: "Blocked Traffic Executive Summary"}
+	reportMetadata := ReportMetadata{Title: reportTitleForScope(parsed.Coverage.TrafficScope)}
 	datasetID := ""
 	if datasetName := strings.TrimSpace(r.FormValue("dataset_name")); datasetName != "" {
 		saved, err := datasetManager.saveDataset(SavedDataset{
@@ -2208,8 +2302,12 @@ func handleImportCSV(w http.ResponseWriter, r *http.Request) {
 	state.DatasetID = datasetID
 	state.DatasetCoverage = parsed.Coverage
 	state.ReportMetadata = reportMetadata
+	state.TrafficScope = normalizedTrafficScope(parsed.Coverage.TrafficScope)
 	state.IsDone = true
 	state.IsCancelled = false
+	state.IsPartial = parsed.Coverage.Partial
+	state.FailedChunks = 0
+	state.RunError = ""
 	state.Mu.Unlock()
 
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -2273,6 +2371,12 @@ func beginExtractionWithContext(parent context.Context, cfg Config) (Config, con
 	if requestedChunks > maxExtractionChunks {
 		return Config{}, nil, fmt.Errorf("the requested extraction would create %d chunks; the limit is %d", requestedChunks, maxExtractionChunks)
 	}
+	outputDirectory, outputName, err := validateOutputDestination(resolved.SavePath, resolved.FileName)
+	if err != nil {
+		return Config{}, nil, err
+	}
+	resolved.SavePath = outputDirectory
+	resolved.FileName = outputName
 
 	state.Mu.Lock()
 	if state.CancelFunc != nil {
@@ -2283,16 +2387,22 @@ func beginExtractionWithContext(parent context.Context, cfg Config) (Config, con
 	state.RequestedDays = requestedDays
 	state.RequestedChunks = requestedChunks
 	state.ChunkInterval = chunkLabel
+	state.ActiveChunks = 0
+	state.RunStartedAt = time.Now().UTC()
+	state.LastProgressAt = state.RunStartedAt
 	state.TotalConnections = 0
 	state.IsDone = false
 	state.IsCancelled = false
+	state.IsPartial = false
+	state.FailedChunks = 0
 	state.Logs = []string{}
 	state.FileName = ""
 	state.LastSummary = nil
 	state.LastInsights = AnalyticsInsights{}
 	state.DatasetID = ""
 	state.DatasetCoverage = DatasetCoverage{}
-	state.ReportMetadata = ReportMetadata{Title: "Blocked Traffic Executive Summary"}
+	state.ReportMetadata = ReportMetadata{Title: reportTitleForScope(resolved.TrafficScope)}
+	state.TrafficScope = resolved.TrafficScope
 	state.RunError = ""
 
 	ctx, cancel := context.WithTimeout(parent, maxExtractionTime)
@@ -2350,12 +2460,32 @@ func outputCSVPath(savePath, fileName string) (string, error) {
 	}
 	dir := strings.TrimSpace(savePath)
 	if dir == "" {
-		return name, nil
+		return "", fmt.Errorf("target folder is required and must be an absolute path")
 	}
 	if !filepath.IsAbs(dir) {
 		return "", fmt.Errorf("target folder must be an absolute path")
 	}
 	return filepath.Join(filepath.Clean(dir), name), nil
+}
+
+func validateOutputDestination(savePath, fileName string) (string, string, error) {
+	finalPath, err := outputCSVPath(savePath, fileName)
+	if err != nil {
+		return "", "", err
+	}
+	directory := filepath.Dir(finalPath)
+	name := filepath.Base(finalPath)
+	root, err := openExistingRoot(directory)
+	if err != nil {
+		return "", "", fmt.Errorf("target folder %q is unavailable: %w", directory, err)
+	}
+	defer root.Close()
+	if _, err := root.Lstat(name); err == nil {
+		return "", "", fmt.Errorf("target file already exists: %s; choose a different filename", finalPath)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "", "", fmt.Errorf("cannot validate target file %q: %w", finalPath, err)
+	}
+	return directory, name, nil
 }
 
 func looksLikeIPAddress(value string) bool {
@@ -2578,6 +2708,15 @@ func buildServiceIncludeEntries(raw string, serviceMap map[string][]interface{})
 	}
 
 	return includes, warnings
+}
+
+func buildServiceFilter(includeRaw, excludeRaw string, serviceMap map[string][]interface{}) (illumio.ServiceFilter, []string, []string) {
+	includeEntries, includeWarnings := buildServiceIncludeEntries(includeRaw, serviceMap)
+	excludeEntries, excludeWarnings := buildServiceIncludeEntries(excludeRaw, serviceMap)
+	return illumio.ServiceFilter{
+		Include: append(make([]interface{}, 0, len(includeEntries)), includeEntries...),
+		Exclude: append(make([]interface{}, 0, len(excludeEntries)), excludeEntries...),
+	}, includeWarnings, excludeWarnings
 }
 
 func uniqueJoinedLabelValues(labels []illumio.FlowLabel, key string) string {
@@ -3016,6 +3155,7 @@ func runExtraction(ctx context.Context, cfg Config) {
 		vsvrMap[i.Name] = i.Href
 	}
 
+	serviceFilter, serviceWarnings, serviceExclusionWarnings := buildServiceFilter(cfg.Services, cfg.ExcludeServices, serviceMap)
 	req := illumio.AsyncQueryRequest{
 		Sources: illumio.IncludeExclude{
 			Include: [][]illumio.LabelRef{},
@@ -3025,10 +3165,14 @@ func runExtraction(ctx context.Context, cfg Config) {
 			Include: [][]illumio.LabelRef{},
 			Exclude: []illumio.LabelRef{},
 		},
-		Services: illumio.ServiceFilter{
-			Include: make([]interface{}, 0),
-			Exclude: make([]interface{}, 0),
-		},
+		Services:        serviceFilter,
+		PolicyDecisions: policyDecisionsForScope(cfg.TrafficScope),
+	}
+	for _, entry := range serviceWarnings {
+		addLog(fmt.Sprintf("Warning: skipped unknown service filter '%s'", entry))
+	}
+	for _, entry := range serviceExclusionWarnings {
+		addLog(fmt.Sprintf("Warning: skipped unknown service exclusion '%s'", entry))
 	}
 
 	var selectorWarnings []string
@@ -3049,14 +3193,6 @@ func runExtraction(ctx context.Context, cfg Config) {
 		addLog(fmt.Sprintf("Warning: skipped unknown destination exclusion '%s'", warning))
 	}
 
-	if cfg.Services != "" {
-		includeEntries, warnings := buildServiceIncludeEntries(cfg.Services, serviceMap)
-		req.Services.Include = append(req.Services.Include, includeEntries...)
-		for _, entry := range warnings {
-			addLog(fmt.Sprintf("Warning: skipped unknown service filter '%s'", entry))
-		}
-	}
-
 	type FlowKey struct {
 		SrcIP, DstIP         string
 		Port, Proto          int
@@ -3064,13 +3200,26 @@ func runExtraction(ctx context.Context, cfg Config) {
 		Process, FQDN        string
 		SrcLabels, DstLabels string
 	}
-	aggregatedFlows := make(map[FlowKey]struct {
+	type AggregateKey struct {
+		Connection     FlowKey
+		PolicyDecision string
+		DraftDecision  string
+	}
+	flowIdentity := func(key FlowKey) string {
+		return strings.Join([]string{
+			key.SrcIP, key.DstIP, strconv.Itoa(key.Port), strconv.Itoa(key.Proto),
+			key.SrcWkld, key.DstWkld, key.Process, key.FQDN, key.SrcLabels, key.DstLabels,
+		}, "\x1f")
+	}
+	aggregatedFlows := make(map[AggregateKey]struct {
 		TotalCount          int
 		FirstSeen, LastSeen time.Time
 		Raw                 illumio.TrafficFlow
 	})
+	connectionSet := make(map[FlowKey]struct{})
 	monthlySummaryMap := make(map[string]MonthlyPortProtocolSummary)
 	monthlyUniqueConnectionSet := make(map[string]map[FlowKey]struct{})
+	monthlyActiveConnectionSet := make(map[string]map[FlowKey]struct{})
 	monthlyRelationshipMap := make(map[string]MonthlyRelationshipSummary)
 	monthlyRelationshipSet := make(map[string]map[FlowKey]struct{})
 	monthlyExternalDestinationMap := make(map[string]MonthlyDestinationSummary)
@@ -3093,53 +3242,49 @@ func runExtraction(ctx context.Context, cfg Config) {
 	}
 	chunks := buildExtractionChunks(rangeStart, rangeEnd, chunkDuration)
 
-	runCtx, cancelRun := context.WithCancel(ctx)
-	defer cancelRun()
 	jobs := make(chan int, len(chunks))
 	var wg sync.WaitGroup
-	var extractionErr error
-	var extractionErrOnce sync.Once
+	var completedWindows, missingWindows []ExtractionWindow
+	processedChunks := make([]bool, len(chunks))
 	for w := 1; w <= 3; w++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for chunkIdx := range jobs {
 				select {
-				case <-runCtx.Done():
+				case <-ctx.Done():
 					return
 				default:
-					chunkReq := req
-					chunkReq.StartDate = chunks[chunkIdx].Start.Format(time.RFC3339)
-					chunkReq.EndDate = chunks[chunkIdx].End.Format(time.RFC3339)
-					var flows []illumio.TrafficFlow
-					var err error
-					for attempt := 1; attempt <= maxChunkAttempts; attempt++ {
-						chunkCtx, chunkCancel := context.WithTimeout(runCtx, maxChunkQueryTime)
-						flows, err = client.FetchDayOfTraffic(chunkCtx, chunkReq, addLog)
-						chunkCancel()
-						if err == nil || runCtx.Err() != nil {
-							break
+					state.Mu.Lock()
+					state.ActiveChunks++
+					state.LastProgressAt = time.Now().UTC()
+					state.Mu.Unlock()
+					finishChunk := func() {
+						state.Mu.Lock()
+						if state.ActiveChunks > 0 {
+							state.ActiveChunks--
 						}
-						if attempt < maxChunkAttempts {
-							addLog(fmt.Sprintf("Chunk %d/%d attempt %d/%d failed: %v; retrying...", chunkIdx+1, len(chunks), attempt, maxChunkAttempts, err))
-							delay := time.Duration(1<<uint(attempt-1)) * time.Second
-							select {
-							case <-time.After(delay):
-							case <-runCtx.Done():
-								return
-							}
-						}
+						state.LastProgressAt = time.Now().UTC()
+						state.Mu.Unlock()
 					}
-					if err == nil {
+					chunkLog := func(message string) {
+						state.Mu.Lock()
+						state.LastProgressAt = time.Now().UTC()
+						state.Mu.Unlock()
+						addLog(fmt.Sprintf("Chunk %d/%d: %s", chunkIdx+1, len(chunks), message))
+					}
+					commit := func(window extractionChunk, flows []illumio.TrafficFlow) {
 						aggMu.Lock()
+						completedWindows = append(completedWindows, ExtractionWindow{Start: window.Start, EndExclusive: window.End})
 						for _, f := range flows {
-							key := FlowKey{
+							connectionKey := FlowKey{
 								SrcIP: f.SrcIP, DstIP: f.DstIP, Port: f.DstPort, Proto: f.Proto,
 								SrcWkld: f.SrcWorkloadHref, DstWkld: f.DstWorkloadHref,
 								Process: f.ProcessName, FQDN: f.DstFQDN,
 								SrcLabels: canonicalFlowLabels(f.SrcLabels), DstLabels: canonicalFlowLabels(f.DstLabels),
 							}
-							entry, exists := aggregatedFlows[key]
+							aggregateKey := AggregateKey{Connection: connectionKey, PolicyDecision: f.PolicyDecision, DraftDecision: f.DraftDecision}
+							entry, exists := aggregatedFlows[aggregateKey]
 							if !exists {
 								entry.FirstSeen = f.FirstDetected
 								entry.LastSeen = f.LastDetected
@@ -3152,7 +3297,8 @@ func runExtraction(ctx context.Context, cfg Config) {
 							if f.LastDetected.After(entry.LastSeen) {
 								entry.LastSeen = f.LastDetected
 							}
-							aggregatedFlows[key] = entry
+							aggregatedFlows[aggregateKey] = entry
+							connectionSet[connectionKey] = struct{}{}
 
 							protocol := fmt.Sprintf("%d", f.Proto)
 							if name, ok := protoMap[f.Proto]; ok {
@@ -3173,7 +3319,7 @@ func runExtraction(ctx context.Context, cfg Config) {
 									set = make(map[FlowKey]struct{})
 									monthlyUniqueConnectionSet[summaryKey] = set
 								}
-								set[key] = struct{}{}
+								set[connectionKey] = struct{}{}
 
 								sourcePrimary := externalOrManagedLabel(f, true, primaryLabelKey)
 								destinationPrimary := externalOrManagedLabel(f, false, primaryLabelKey)
@@ -3187,7 +3333,7 @@ func runExtraction(ctx context.Context, cfg Config) {
 								if monthlyRelationshipSet[relationshipKey] == nil {
 									monthlyRelationshipSet[relationshipKey] = map[FlowKey]struct{}{}
 								}
-								monthlyRelationshipSet[relationshipKey][key] = struct{}{}
+								monthlyRelationshipSet[relationshipKey][connectionKey] = struct{}{}
 
 								if !endpointHasClassification(f, false) {
 									destinationName := endpointDisplayName(f, false)
@@ -3200,48 +3346,76 @@ func runExtraction(ctx context.Context, cfg Config) {
 									if monthlyExternalDestinationSet[destinationKey] == nil {
 										monthlyExternalDestinationSet[destinationKey] = map[FlowKey]struct{}{}
 									}
-									monthlyExternalDestinationSet[destinationKey][key] = struct{}{}
+									monthlyExternalDestinationSet[destinationKey][connectionKey] = struct{}{}
 								}
 							}
 						}
 						state.Mu.Lock()
-						state.CompletedChunks++
-						state.TotalConnections = len(aggregatedFlows)
+						state.TotalConnections = len(connectionSet)
 						state.Mu.Unlock()
 						aggMu.Unlock()
-						addLog(fmt.Sprintf("Chunk %d/%d (%s to %s): %d connections gathered", chunkIdx+1, len(chunks), chunks[chunkIdx].Start.Format("2006-01-02 15:04Z"), chunks[chunkIdx].End.Format("2006-01-02 15:04Z"), len(flows)))
+						chunkLog(fmt.Sprintf("%s to %s: %d connections gathered", window.Start.Format(time.RFC3339), window.End.Format(time.RFC3339), len(flows)))
+					}
+					gaps := fetchExtractionChunk(ctx, req, chunks[chunkIdx], client.FetchDayOfTraffic, commit, chunkLog)
+					finishChunk()
+					processedChunks[chunkIdx] = true
+					aggMu.Lock()
+					missingWindows = append(missingWindows, gaps...)
+					aggMu.Unlock()
+					state.Mu.Lock()
+					if len(gaps) == 0 {
+						state.CompletedChunks++
 					} else {
-						addLog(fmt.Sprintf("Error chunk %d/%d (%s to %s): %v", chunkIdx+1, len(chunks), chunks[chunkIdx].Start.Format("2006-01-02 15:04Z"), chunks[chunkIdx].End.Format("2006-01-02 15:04Z"), err))
-						extractionErrOnce.Do(func() {
-							extractionErr = fmt.Errorf("chunk %d/%d failed after %d attempts: %w", chunkIdx+1, len(chunks), maxChunkAttempts, err)
-							cancelRun()
-						})
-						return
+						state.FailedChunks++
+					}
+					state.Mu.Unlock()
+					for _, gap := range gaps {
+						chunkLog(fmt.Sprintf("WARNING: missing %s to %s: %s. Keeping completed windows and continuing where possible.", gap.Start.Format(time.RFC3339), gap.EndExclusive.Format(time.RFC3339), gap.Reason))
 					}
 				}
 			}
 		}()
 	}
-	addLog(fmt.Sprintf("Extraction window: %s through %s (%d days) using %s chunks (%d total).", rangeStart.Format("2006-01-02"), rangeEnd.Format("2006-01-02"), requestedDays, chunkLabel, len(chunks)))
+	addLog(fmt.Sprintf("Extraction window: %s through %s (%d days) using %s chunks (%d total); traffic scope: %s.", rangeStart.Format("2006-01-02"), rangeEnd.Format("2006-01-02"), requestedDays, chunkLabel, len(chunks), normalizedTrafficScope(cfg.TrafficScope)))
 	for i := 0; i < len(chunks); i++ {
 		jobs <- i
 	}
 	close(jobs)
 	wg.Wait()
 
-	if extractionErr != nil {
-		addLog(fmt.Sprintf("Extraction aborted without writing a CSV: %v", extractionErr))
-		markRunFinished("", false)
+	for i, processed := range processedChunks {
+		if !processed {
+			reason := "window was not queried"
+			if ctx.Err() != nil {
+				reason = ctx.Err().Error()
+			}
+			missingWindows = append(missingWindows, ExtractionWindow{Start: chunks[i].Start, EndExclusive: chunks[i].End, Reason: reason})
+		}
+	}
+	sortExtractionWindows(completedWindows)
+	sortExtractionWindows(missingWindows)
+	partial := len(missingWindows) > 0
+	cancelled := errors.Is(ctx.Err(), context.Canceled)
+	state.Mu.Lock()
+	completedChunks := state.CompletedChunks
+	state.IsPartial = partial
+	state.FailedChunks = len(chunks) - completedChunks
+	state.Mu.Unlock()
+	if len(completedWindows) == 0 {
+		addLog("Error: no traffic query windows completed successfully; no CSV could be saved. See the missing-window errors above.")
+		markRunFinished("", cancelled)
 		return
 	}
-	if ctx.Err() != nil {
-		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			addLog(fmt.Sprintf("Extraction exceeded the %s overall time limit; no CSV was written.", maxExtractionTime))
-			markRunFinished("", false)
-		} else {
-			markRunFinished("", true)
+	warning := ""
+	if partial {
+		warning = fmt.Sprintf("INCOMPLETE EXTRACTION: %d/%d original chunks completed; %d smaller or original window(s) missing. Saved data covers successful windows only; missing activity is unknown, not zero.", completedChunks, len(chunks), len(missingWindows))
+		if ctx.Err() != nil {
+			warning += " Extraction stopped: " + ctx.Err().Error() + "."
 		}
-		return
+		state.Mu.Lock()
+		state.RunError = warning
+		state.Mu.Unlock()
+		addLog(warning)
 	}
 
 	finalPath, err := outputCSVPath(cfg.SavePath, cfg.FileName)
@@ -3250,8 +3424,17 @@ func runExtraction(ctx context.Context, cfg Config) {
 		markRunFinished("", false)
 		return
 	}
+	if partial {
+		finalPath = partialCSVPath(finalPath)
+	}
 
-	f, err := os.OpenFile(finalPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	f, closeRoot, err := createExclusiveRootedFile(finalPath, 0600)
+	if errors.Is(err, os.ErrExist) {
+		// A prior partial run may have used this name even though the requested
+		// full-export name was available when this run began. Never overwrite it.
+		finalPath = strings.TrimSuffix(finalPath, filepath.Ext(finalPath)) + "_" + time.Now().UTC().Format("20060102T150405.000000000") + ".csv"
+		f, closeRoot, err = createExclusiveRootedFile(finalPath, 0600)
+	}
 	if err != nil {
 		addLog(fmt.Sprintf("Error: %v", err))
 		markRunFinished("", false)
@@ -3260,8 +3443,9 @@ func runExtraction(ctx context.Context, cfg Config) {
 	outputComplete := false
 	defer func() {
 		_ = f.Close()
+		closeRoot()
 		if !outputComplete {
-			_ = os.Remove(finalPath)
+			_ = removeRootedFile(finalPath)
 		}
 	}()
 
@@ -3276,7 +3460,10 @@ func runExtraction(ctx context.Context, cfg Config) {
 	for _, k := range orderedKeys {
 		header = append(header, "Dst "+strings.ToUpper(k[:1])+k[1:])
 	}
-	header = append(header, "FQDN", "Port", "Protocol", "Process Name", "Flows")
+	header = append(header, "FQDN", "Port", "Protocol", "Process Name", "Policy Decision", "Draft Policy Decision", "Traffic Scope", "Flows")
+	if partial {
+		header = append(header, "Extraction Status")
+	}
 	if err := w.Write(header); err != nil {
 		addLog(fmt.Sprintf("Error writing CSV header: %v", err))
 		markRunFinished("", false)
@@ -3284,8 +3471,9 @@ func runExtraction(ctx context.Context, cfg Config) {
 	}
 
 	summaryMap := make(map[string]PortProtocolSummary)
+	summaryUniqueConnectionSet := make(map[string]map[FlowKey]struct{})
 	analyticsRecords := make([]AnalyticsRecord, 0, len(aggregatedFlows))
-	for _, entry := range aggregatedFlows {
+	for aggregateKey, entry := range aggregatedFlows {
 		flow := entry.Raw
 		protocol := fmt.Sprintf("%d", flow.Proto)
 		if name, ok := protoMap[flow.Proto]; ok {
@@ -3323,8 +3511,14 @@ func runExtraction(ctx context.Context, cfg Config) {
 			fmt.Sprintf("%d", flow.DstPort),
 			protocol,
 			flow.ProcessName,
+			flow.PolicyDecision,
+			flow.DraftDecision,
+			normalizedTrafficScope(cfg.TrafficScope),
 			fmt.Sprintf("%d", entry.TotalCount),
 		)
+		if partial {
+			row = append(row, "partial")
+		}
 		for i := range row {
 			row[i] = safeCSVCell(row[i])
 		}
@@ -3340,22 +3534,31 @@ func runExtraction(ctx context.Context, cfg Config) {
 		summaryEntry.Protocol = protocol
 		summaryEntry.ProtocolNumber = flow.Proto
 		summaryEntry.FlowCount += entry.TotalCount
-		summaryEntry.UniqueConnections++
 		summaryMap[summaryKey] = summaryEntry
+		if summaryUniqueConnectionSet[summaryKey] == nil {
+			summaryUniqueConnectionSet[summaryKey] = map[FlowKey]struct{}{}
+		}
+		summaryUniqueConnectionSet[summaryKey][aggregateKey.Connection] = struct{}{}
 
 		analyticsRecords = append(analyticsRecords, AnalyticsRecord{
-			SrcEnv:     externalOrManagedLabel(flow, true, primaryLabelKey),
-			DstEnv:     externalOrManagedLabel(flow, false, primaryLabelKey),
-			SrcApp:     externalOrManagedLabel(flow, true, secondaryLabelKey),
-			DstApp:     externalOrManagedLabel(flow, false, secondaryLabelKey),
-			SrcIP:      endpointDisplayName(flow, true),
-			DstIP:      endpointDisplayName(flow, false),
-			DstFQDN:    flow.DstFQDN,
-			SrcManaged: endpointHasClassification(flow, true),
-			DstManaged: endpointHasClassification(flow, false),
-			Protocol:   protocol,
-			Port:       flow.DstPort,
-			FlowCount:  entry.TotalCount,
+			Identity:       flowIdentity(aggregateKey.Connection),
+			SrcEnv:         externalOrManagedLabel(flow, true, primaryLabelKey),
+			DstEnv:         externalOrManagedLabel(flow, false, primaryLabelKey),
+			SrcApp:         externalOrManagedLabel(flow, true, secondaryLabelKey),
+			DstApp:         externalOrManagedLabel(flow, false, secondaryLabelKey),
+			SrcIP:          endpointDisplayName(flow, true),
+			DstIP:          endpointDisplayName(flow, false),
+			DstFQDN:        flow.DstFQDN,
+			SrcManaged:     endpointHasClassification(flow, true),
+			DstManaged:     endpointHasClassification(flow, false),
+			Protocol:       protocol,
+			Port:           flow.DstPort,
+			FlowCount:      entry.TotalCount,
+			FirstSeen:      entry.FirstSeen,
+			LastSeen:       entry.LastSeen,
+			PolicyDecision: flow.PolicyDecision,
+			DraftDecision:  flow.DraftDecision,
+			TrafficScope:   normalizedTrafficScope(cfg.TrafficScope),
 		})
 	}
 	w.Flush()
@@ -3374,9 +3577,23 @@ func runExtraction(ctx context.Context, cfg Config) {
 		markRunFinished("", false)
 		return
 	}
+	// The valid CSV is durable. Later report/manifest errors must not delete it.
+	outputComplete = true
+	manifest := extractionManifest{
+		Version: 1, Partial: partial, CSVFile: filepath.Base(finalPath), RequestedStart: rangeStart,
+		RequestedEnd: rangeEnd.Add(24 * time.Hour), RequestedChunks: len(chunks), CompletedChunks: completedChunks,
+		CompletedWindows: completedWindows, MissingWindows: missingWindows, Warning: warning,
+	}
+	if err := writeExtractionManifest(finalPath, manifest); err != nil {
+		addLog(fmt.Sprintf("Warning: CSV saved, but could not save the extraction coverage file: %v", err))
+		warning += " Coverage-file write failed; consult the extraction log for missing windows."
+	} else {
+		addLog(fmt.Sprintf("Extraction coverage saved to %s", extractionManifestPath(finalPath)))
+	}
 
 	summary := make([]PortProtocolSummary, 0, len(summaryMap))
-	for _, item := range summaryMap {
+	for key, item := range summaryMap {
+		item.UniqueConnections = len(summaryUniqueConnectionSet[key])
 		summary = append(summary, item)
 	}
 	sort.Slice(summary, func(i, j int) bool {
@@ -3395,7 +3612,7 @@ func runExtraction(ctx context.Context, cfg Config) {
 		entry.UniqueConnections = len(set)
 		monthlySummaryMap[summaryKey] = entry
 	}
-	for _, entry := range aggregatedFlows {
+	for aggregateKey, entry := range aggregatedFlows {
 		flow := entry.Raw
 		protocol := fmt.Sprintf("%d", flow.Proto)
 		if name, ok := protoMap[flow.Proto]; ok {
@@ -3407,11 +3624,15 @@ func runExtraction(ctx context.Context, cfg Config) {
 			monthEntry.Month = activeMonth
 			monthEntry.Protocol = protocol
 			monthEntry.Port = flow.DstPort
-			monthEntry.ActiveConnections++
 			monthlySummaryMap[summaryKey] = monthEntry
+			if monthlyActiveConnectionSet[summaryKey] == nil {
+				monthlyActiveConnectionSet[summaryKey] = map[FlowKey]struct{}{}
+			}
+			monthlyActiveConnectionSet[summaryKey][aggregateKey.Connection] = struct{}{}
 		}
 	}
-	for _, item := range monthlySummaryMap {
+	for key, item := range monthlySummaryMap {
+		item.ActiveConnections = len(monthlyActiveConnectionSet[key])
 		monthlySummaries = append(monthlySummaries, item)
 	}
 	sort.Slice(monthlySummaries, func(i, j int) bool {
@@ -3427,6 +3648,7 @@ func runExtraction(ctx context.Context, cfg Config) {
 		return monthlySummaries[i].Port < monthlySummaries[j].Port
 	})
 
+	analyticsRecords = mergeImportedAnalyticsRecords(analyticsRecords)
 	insights := buildInsightsForDimensions(analyticsRecords, primaryLabelKey, secondaryLabelKey)
 	insights.MonthlyPortProtocol = monthlySummaries
 	for key, row := range monthlyRelationshipMap {
@@ -3455,22 +3677,23 @@ func runExtraction(ctx context.Context, cfg Config) {
 		}
 		return insights.MonthlyExternalDestinations[i].Destination < insights.MonthlyExternalDestinations[j].Destination
 	})
-	coverageEnd := rangeEnd.Add(24*time.Hour - time.Second)
-	coverage := normalizeCoverage(DatasetCoverage{Source: "live_extraction", Files: []DatasetFileCoverage{{
-		Name: filepath.Base(finalPath), Rows: len(aggregatedFlows), FirstDetected: rangeStart, LastDetected: coverageEnd,
-		Months: monthSpan(rangeStart, coverageEnd),
-	}}})
-	if info, err := os.Stat(finalPath); err == nil {
+	coverage := coverageForExtraction(finalPath, normalizedTrafficScope(cfg.TrafficScope), len(aggregatedFlows), completedWindows, missingWindows, warning)
+	if info, err := statRootedFile(finalPath); err == nil {
 		coverage.Files[0].Size = info.Size()
+		addLog(fmt.Sprintf("CSV output: %d rows, %d bytes (%.1f MiB). PCE download sizes include response metadata and can be much larger.", len(aggregatedFlows), info.Size(), float64(info.Size())/(1<<20)))
 	}
 
 	state.Mu.Lock()
 	state.LastSummary = summary
 	state.LastInsights = insights
 	state.DatasetCoverage = coverage
+	state.TrafficScope = normalizedTrafficScope(cfg.TrafficScope)
 	state.Mu.Unlock()
 
-	outputComplete = true
-	addLog(fmt.Sprintf("SUCCESS: Final data saved to %s", finalPath))
-	markRunFinished(finalPath, false)
+	if partial {
+		addLog(fmt.Sprintf("PARTIAL CSV SAVED: %s. %s", finalPath, warning))
+	} else {
+		addLog(fmt.Sprintf("SUCCESS: Final data saved to %s", finalPath))
+	}
+	markRunFinished(finalPath, cancelled)
 }

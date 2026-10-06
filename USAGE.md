@@ -49,11 +49,13 @@ Discovery notes:
     -   The defaults are `env` and `app`. For a business-unit-led report, select `BU` as primary and, for example, `app` as secondary.
     -   These choices control dashboard matrices, heatmap modes, generated executive findings, and scorecards. They are also saved with PCE profiles.
 3.  **Define Filters:**
+    -   **Traffic Scope:** Choose **Blocked traffic only** (the default) or **All traffic (all policy decisions)**. All-traffic exports include policy-decision columns so allowed, potentially blocked, blocked, and unknown traffic can be distinguished.
     -   **Sources/Destinations:** Enter label names (e.g., `App: DB`) or IP addresses. Separate multiple items with commas.
     -   **Services:** Enter specific service names from the PCE (e.g., `SSH, MySQL`) or explicit protocol/port filters (e.g., `TCP:445, UDP:5355`). Leave empty to pull all services.
+    -   **Exclusions (Services):** Exclude PCE service names or explicit protocol/port filters (e.g., `TCP:9300, UDP:5355`). These apply alongside source and destination exclusions and are also available in report templates.
     -   **Add Risky Services:** Click this button to append the Illumio ransomware risky-services set to the Services field. Entries marked `TCP/UDP` are added as separate filters.
     - **Exclusions:** Enter labels or IPs you wish to exclude from either the Source or Destination side.
-    - **Days To Fetch:** Choose how many days of blocked traffic to query. The default is 90.
+    - **Days To Fetch:** Choose how many days of traffic to query. The default is 90.
     - **Chunk Interval:** Choose how the requested time window is split before querying the PCE. The default is `1 day`, with smaller options down to `5 minutes`.
     - **Start Date / End Date:** Optionally set an explicit query window using `YYYY-MM-DD`. If both dates are provided, the app fetches that exact inclusive date range and ignores `Days To Fetch`.
     - **Unknown selectors:** If a source, destination, or exclusion value does not match a discovered object and is not a valid IP or CIDR, it will be skipped and logged as a warning instead of being sent to the PCE as an invalid IP.
@@ -64,10 +66,13 @@ Discovery notes:
 
 ## 5. Monitoring & Controls
 -   **Progress Bar:** Shows the percentage of the requested time window completed.
--   **Status Label:** Displays how many days have been processed and the total flow count gathered so far.
--   **Log Box:** Provides a detailed, real-time feed of API interactions and errors.
+-   **Status Label:** Displays completed and active chunks, unique connections, and time since the last progress update. Reloading the page reconnects to a running extraction.
+-   **Log Box:** Provides a detailed, real-time feed of API interactions, download byte/row counts, retries, and errors. Downloaded JSON bytes include repeated endpoint/label metadata and are different from the final, aggregated CSV size.
 -   **Discovery Progress:** When loading policy objects, the log box shows staged progress for labels, services, IP lists, and other discovery collections.
--   **Cancel Button:** Use this to stop the extraction immediately. Cancelled runs and runs with any ultimately failed chunk do not save partial data.
+-   **Cancel Button:** Requests that in-flight queries stop and completed query windows be saved. Keep the application running until the status confirms that saving is finished.
+-   **Partial Results:** If a chunk fails after retries, remaining chunks continue. When at least one query window succeeds, completed data is saved to an `_PARTIAL.csv` with an amber warning and working analytics links. A successful window with no matching rows can produce a header-only partial file. No file is created if every window failed. Partially downloaded or malformed query responses are not included.
+-   **Coverage Manifest:** Every extraction writes a companion `.extraction.json` file listing completed and missing windows. A partial CSV also carries an `Extraction Status` column, so re-imported data remains marked incomplete even if the CSV is renamed. Keep the manifest for exact gap details. Missing windows must not be interpreted as zero activity or a complete reporting baseline.
+-   **Large Queries:** Traffic downloads have no fixed total-response-size cutoff. When the PCE reports a query exceeded its result-row limit, the tool splits that window and retries smaller windows. Timeouts, available memory/disk, and PCE limits still apply; splitting can add requests and time. Control/metadata responses retain a safety bound.
 -   **Output Safety:** Existing files are not overwritten, filenames cannot contain directory traversal components, and spreadsheet-formula-like cells are neutralized in exported CSVs.
 
 ## 6. Analytics Dashboard
@@ -85,7 +90,7 @@ Available analytics views:
 
 Notes:
 -   Major sections throughout the extractor, analytics, heatmap, executive, and automation workspaces can be collapsed or expanded independently. Each page remembers its section state in the browser.
--   The monthly breakdown groups blocked flows by `YYYY-MM` and then shows the protocol/port rows contributing to each month.
+-   The monthly breakdown groups flows in the selected traffic scope by `YYYY-MM` and then shows the protocol/port rows contributing to each month.
 -   `Flows` reflects observed monthly volume. `Unique Connections` reflects connections with observed traffic in that month. `Active Connections` reflects connections whose first/last detected span includes that month, even if the observed flow volume was concentrated in a different month.
 -   The primary service pivot lets you select one or more source label values and see destination-label flow totals broken out by protocol and port.
 -   Heatmaps exclude the `External/Unmanaged` bucket by default so labeled relationships are easier to read.
@@ -112,8 +117,8 @@ This page is intended for leadership or slide-friendly review and highlights:
 -   headline summary cards
 -   latest-month trend cards for observed flows, active connections, and month-over-month change
 -   auto-generated top findings
--   risky services by blocked flow volume
--   persistent blocked service patterns across months
+-   risky services by flow volume in the selected scope
+-   persistent service patterns across months
 -   latest-month new port / protocol pairs
 -   top primary-dimension cross-talk relationships
 -   external / unmanaged destination spotlight
@@ -164,7 +169,7 @@ Open `/automation` or click **Templates & Automation** on the extractor page.
 ### Create a template
 
 1.  Select a saved PCE profile. A new template can copy that profile's current filters and analytics dimensions as a starting point.
-2.  Enter the template name, filters, rolling number of trailing days, chunk interval, and an absolute output folder.
+2.  Enter the template name, traffic scope, filters (including service exclusions), rolling number of trailing days, chunk interval, and an absolute output folder.
 3.  Use a filename pattern. The recommended default is `blocked-{template}-{date}-{time}.csv`; supported tokens are `{template}`, `{date}`, `{time}`, `{timestamp}`, and `{run_id}`.
 4.  Set the number of local artifacts to retain. Retention only removes paths previously recorded as successful artifacts for this template.
 5.  Select whether the run should also generate self-contained HTML and PDF executive reports, then set their optional title, customer, prepared-by, and notes fields.
@@ -190,10 +195,12 @@ Schedules run only while the application process is running. Queued jobs persist
 -   **Slack App:** Requires a bot token with `files:write` and a channel ID. The app must be a member of the destination channel. CSV delivery uses Slack's external upload URL and completion APIs.
 -   **Teams Workflow:** Posts an Adaptive Card to a `When a Teams webhook request is received` URL. In base64 mode, `file_name`, `file_base64`, and `file_sha256` are added to the request so the Power Automate workflow can validate and create the CSV in SharePoint or OneDrive. Inline files are limited to 4 MiB.
 -   **Email / SMTP:** Sends generated artifacts as MIME attachments. TLS can use implicit TLS on port 465 or STARTTLS on other ports such as 587. Authenticated SMTP requires TLS; TLS may be disabled only for an unauthenticated local relay.
--   **Shared Folder:** Copies generated artifacts to an absolute local, mounted, or network-share path without overwriting an existing file.
+-   **Shared Folder:** Copies generated artifacts to an absolute, existing local, mounted, or network-share directory without overwriting an existing file. Create the destination directory before testing or saving it; file operations are confined to that directory.
 -   **SFTP:** Uploads generated artifacts using a password or absolute private-key path. The server's public host key is mandatory and pinned; insecure host-key bypass is not supported.
 
 When HTML or PDF generation is enabled, each successful delivery destination receives the CSV and each selected executive artifact. Run history provides a separate download link for every retained format.
+
+Incomplete extractions appear as **partial**, with the retained CSV, a coverage-manifest download, and the failure reason. They do not generate executive artifacts, trigger successful-report delivery, or become comparison baselines; configured failure notifications still apply. Retention covers successful runs, partial runs, and failed runs that retained an artifact. If executive artifact generation fails after a complete CSV was written, that CSV remains available.
 
 Use **Test Saved Destination** before associating a destination with a template. Webhook URLs, tokens, header values, SMTP passwords, and SFTP passwords are stored only in the owner-readable local automation store and are not returned to the browser.
 
@@ -203,7 +210,7 @@ Exported template files omit destination associations. Imported templates keep t
 
 Delivery can occur after every successful run, only when the report changes, or when thresholds match. Conditions include:
 
--   Minimum blocked flow count
+-   Minimum flow count in the template's selected traffic scope
 -   Absolute run-to-run flow percentage change
 -   Newly observed primary-dimension relationships
 -   Newly observed protocol/port pairs
@@ -268,6 +275,8 @@ The live smoke test validates:
 -   **Connection Refused:** Ensure your machine has network access to the PCE URL provided.
 -   **Remote Users Cannot Reach the App:** This is intentional. The current release is local-only and has no remote hosting mode.
 -   **0 Flows Found:** Verify your label names. Labels must match the exact case and spelling used in the PCE.
+-   **Partial extraction saved:** Review the log and `.extraction.json` manifest for missing windows. Retry those windows with smaller chunks or narrower filters. Retained data is usable, but incomplete; importing overlapping retries may still add differing aggregate rows, so check coverage warnings.
+-   **PCE response exceeded 256 MiB limit:** New builds stream traffic downloads without that cutoff. If this error remains, confirm the running executable's footer version and check which endpoint failed: the bound still protects control/metadata responses, not traffic downloads.
 -   **Heatmap looks too large:** Use the source and destination filters or leave `Hide Empty Rows/Cols` enabled.
 -   **Live smoke test cannot connect:** Ensure the local machine has network access to the PCE and that the selected saved profile is still valid.
 -   **A second copy will not start:** The application intentionally permits one process per local user. Stop the existing UI or scheduler process before using `--run-template` or `--scheduler-only` separately.

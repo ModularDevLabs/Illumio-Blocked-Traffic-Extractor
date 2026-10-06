@@ -7,6 +7,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -113,6 +114,38 @@ func TestBuildServiceIncludeEntries(t *testing.T) {
 	udpRef, ok := got[2].(illumio.PortProtoService)
 	if !ok || udpRef != (illumio.PortProtoService{Port: 5355, Proto: 17}) {
 		t.Fatalf("third include = %#v, want UDP:5355", got[2])
+	}
+}
+
+func TestBuildServiceFilterIncludesAndExcludes(t *testing.T) {
+	t.Parallel()
+	serviceMap := map[string][]interface{}{
+		"SSH": {illumio.PortProtoService{Port: 22, Proto: 6}},
+		"DNS": {
+			illumio.PortProtoService{Port: 53, Proto: 6},
+			illumio.PortProtoService{Port: 53, Proto: 17},
+		},
+	}
+
+	filter, includeWarnings, excludeWarnings := buildServiceFilter(
+		"SSH, TCP:443, Missing Include",
+		"DNS, UDP:5355, Missing Exclusion",
+		serviceMap,
+	)
+	if !reflect.DeepEqual(includeWarnings, []string{"Missing Include"}) {
+		t.Fatalf("include warnings = %#v", includeWarnings)
+	}
+	if !reflect.DeepEqual(excludeWarnings, []string{"Missing Exclusion"}) {
+		t.Fatalf("exclude warnings = %#v", excludeWarnings)
+	}
+	if len(filter.Include) != 2 {
+		t.Fatalf("service includes = %#v", filter.Include)
+	}
+	if len(filter.Exclude) != 3 {
+		t.Fatalf("service exclusions = %#v", filter.Exclude)
+	}
+	if got, ok := filter.Exclude[2].(illumio.PortProtoService); !ok || got != (illumio.PortProtoService{Port: 5355, Proto: 17}) {
+		t.Fatalf("explicit exclusion = %#v", filter.Exclude[2])
 	}
 }
 
@@ -425,6 +458,32 @@ func TestOutputCSVPathValidation(t *testing.T) {
 	if _, err := outputCSVPath("relative", "report.csv"); err == nil {
 		t.Fatal("outputCSVPath should reject relative output directories")
 	}
+	if _, err := outputCSVPath("", "report.csv"); err == nil {
+		t.Fatal("outputCSVPath should reject a missing output directory")
+	}
+}
+
+func TestValidateOutputDestinationRejectsLateWriteFailuresBeforeExtraction(t *testing.T) {
+	t.Parallel()
+
+	directory := t.TempDir()
+	gotDirectory, gotName, err := validateOutputDestination(directory, "report")
+	if err != nil {
+		t.Fatalf("validateOutputDestination returned error: %v", err)
+	}
+	if gotDirectory != directory || gotName != "report.csv" {
+		t.Fatalf("normalized output = %q/%q", gotDirectory, gotName)
+	}
+	if _, _, err := validateOutputDestination(filepath.Join(directory, "missing"), "report.csv"); err == nil {
+		t.Fatal("validateOutputDestination should reject a missing directory")
+	}
+	existing := filepath.Join(directory, "existing.csv")
+	if err := os.WriteFile(existing, []byte("existing"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := validateOutputDestination(directory, "existing.csv"); err == nil {
+		t.Fatal("validateOutputDestination should reject an existing artifact")
+	}
 }
 
 func TestValidatePCEURL(t *testing.T) {
@@ -474,7 +533,7 @@ func TestPublicProfileRedactsCredentials(t *testing.T) {
 
 	profile := PCEProfile{
 		Name: "prod", APIKey: "key", APISecret: "secret", PCEURL: "https://pce.example.com", OrgID: "1",
-		AnalysisPrimary: "BU", AnalysisSecondary: "app",
+		AnalysisPrimary: "BU", AnalysisSecondary: "app", ExcludeServices: "DNS, TCP:22",
 	}
 	public := profile.public()
 	encoded, err := json.Marshal(public)
@@ -486,6 +545,9 @@ func TestPublicProfileRedactsCredentials(t *testing.T) {
 	}
 	if public.AnalysisPrimary != "BU" || public.AnalysisSecondary != "app" {
 		t.Fatalf("public profile analysis labels = %q/%q", public.AnalysisPrimary, public.AnalysisSecondary)
+	}
+	if public.ExcludeServices != profile.ExcludeServices {
+		t.Fatalf("public profile service exclusions = %q, want %q", public.ExcludeServices, profile.ExcludeServices)
 	}
 }
 
@@ -881,7 +943,8 @@ func TestApplicationHeadersUseConsistentNavigationAndThemeControls(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	shellCSS := string(shell)
+	// Windows checkouts may use CRLF without changing the CSS rules.
+	shellCSS := strings.ReplaceAll(string(shell), "\r\n", "\n")
 	for _, rule := range []string{"scrollbar-gutter: stable", ".app-header-action {\n        order: 1", ".app-nav {\n        order: 2", ".theme-switcher {\n        order: 3"} {
 		if !strings.Contains(shellCSS, rule) {
 			t.Fatalf("shared app shell is missing the stable header rule %q", rule)
@@ -994,6 +1057,48 @@ func TestResolveConfigCredentialsUsesServerSideProfile(t *testing.T) {
 	}
 	if cfg.PCEURL != "https://pce.example.com" || cfg.OrgID != "7" || cfg.APIKey != "stored-key" || cfg.APISecret != "stored-secret" {
 		t.Fatalf("resolved config = %#v", cfg)
+	}
+}
+
+func TestResolveConfigCredentialsPreservesStandaloneInlineCredentials(t *testing.T) {
+	cfg, err := resolveConfigCredentials(Config{
+		PCEURL: "http://127.0.0.1:18443", OrgID: "1", APIKey: "inline-key", APISecret: "inline-secret",
+		TrafficScope: trafficScopeAll,
+	})
+	if err != nil {
+		t.Fatalf("resolveConfigCredentials returned error: %v", err)
+	}
+	if cfg.APIKey != "inline-key" || cfg.APISecret != "inline-secret" || cfg.TrafficScope != trafficScopeAll {
+		t.Fatalf("resolved inline config = %#v", cfg)
+	}
+}
+
+func TestTrafficScopeDefaultsAndPolicyDecisionFilters(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		input        string
+		wantScope    string
+		wantDecision []string
+	}{
+		{"", trafficScopeBlocked, []string{"blocked"}},
+		{"blocked", trafficScopeBlocked, []string{"blocked"}},
+		{"ALL", trafficScopeAll, []string{}},
+	} {
+		scope, err := normalizeTrafficScope(test.input)
+		if err != nil {
+			t.Fatalf("normalizeTrafficScope(%q): %v", test.input, err)
+		}
+		if scope != test.wantScope {
+			t.Fatalf("normalizeTrafficScope(%q) = %q, want %q", test.input, scope, test.wantScope)
+		}
+		decisions := policyDecisionsForScope(scope)
+		if !reflect.DeepEqual(decisions, test.wantDecision) {
+			t.Fatalf("policy decisions for %q = %#v, want %#v", scope, decisions, test.wantDecision)
+		}
+	}
+	if _, err := normalizeTrafficScope("allowed-only"); err == nil {
+		t.Fatal("unsupported traffic scope was accepted")
 	}
 }
 

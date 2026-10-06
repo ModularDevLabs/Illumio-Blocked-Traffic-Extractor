@@ -5,7 +5,7 @@
 
     const product = document.createElement('span');
     product.className = 'app-version-product';
-    product.textContent = 'Illumio Blocked Traffic Extractor';
+    product.textContent = 'Illumio Traffic Extractor';
 
     const separator = document.createElement('span');
     separator.className = 'app-version-separator';

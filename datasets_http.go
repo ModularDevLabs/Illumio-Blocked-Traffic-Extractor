@@ -81,8 +81,12 @@ func handleDatasetLoad(w http.ResponseWriter, r *http.Request) {
 	state.DatasetID = dataset.ID
 	state.DatasetCoverage = dataset.Coverage
 	state.ReportMetadata = dataset.Report
+	state.TrafficScope = normalizedTrafficScope(dataset.Coverage.TrafficScope)
 	state.IsDone = true
 	state.IsCancelled = false
+	state.IsPartial = dataset.Coverage.Partial
+	state.FailedChunks = 0
+	state.RunError = ""
 	state.Mu.Unlock()
 	_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "dataset": dataset})
 }
