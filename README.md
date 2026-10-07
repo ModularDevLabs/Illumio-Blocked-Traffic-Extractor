@@ -6,6 +6,8 @@ Analytics dimensions are configurable from the PCE's discovered label types. The
 
 The local Automation workspace at `/automation` adds reusable report templates, persistent scheduled runs, run-to-run change detection, CSV/HTML/PDF artifact retention, and delivery through generic webhooks, Slack, Teams Workflows, email, shared folders, or host-key-pinned SFTP. The executive view can compose HTML and print/PDF reports from selected sections, export any executive section as a presentation-ready PNG, export an interactive self-contained HTML report, download chart SVG/PNG files, and export monthly trend data as CSV. Major sections can be collapsed throughout every workspace, with their state remembered per page.
 
+The [v1.6.0-rc.1 testing prerelease](https://github.com/ModularDevLabs/Illumio-Blocked-Traffic-Extractor/releases/tag/v1.6.0-rc.1) includes all-traffic extraction, partial-output recovery, and large CSV imports. It does not replace stable v1.5.0. See the [release notes](RELEASE_NOTES_v1.6.0-rc.1.md) for details.
+
 ## Security model
 
 The application is intentionally local-only. It binds exclusively to `127.0.0.1`, validates loopback HTTP hosts and same-origin state-changing requests, and does not provide remote hosting or multi-user authentication. Do not place it behind a reverse proxy or expose it through a port-forward.
@@ -94,6 +96,7 @@ Generated binaries, credentials, CSV exports, and logs are excluded by `.gitigno
 - CSV cells that spreadsheet applications could interpret as formulas are neutralized.
 - PCE `first_detected` and `last_detected` values are retained independently.
 - Multi-file imports remove exact duplicate rows found in different files and deduplicate matching unique connections. Differing aggregate rows from partially overlapping windows remain additive because exported CSVs do not carry per-flow event IDs.
+- CSV imports have no fixed per-file or combined upload-size cap. An 8 MiB file-memory budget spills larger uploads to the system temporary folder, and raw CSV rows are parsed incrementally. Available temporary disk space and memory for derived analytics still apply; up to 60 CSVs can be selected per batch. Both import screens show upload progress and the analysis phase, and only one CSV import runs at a time.
 
 ## License
 
