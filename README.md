@@ -6,7 +6,9 @@ Analytics dimensions are configurable from the PCE's discovered label types. The
 
 The local Automation workspace at `/automation` adds reusable report templates, persistent scheduled runs, run-to-run change detection, CSV/HTML/PDF artifact retention, and delivery through generic webhooks, Slack, Teams Workflows, email, shared folders, or host-key-pinned SFTP. The executive view can compose HTML and print/PDF reports from selected sections, export any executive section as a presentation-ready PNG, export an interactive self-contained HTML report, download chart SVG/PNG files, and export monthly trend data as CSV. Major sections can be collapsed throughout every workspace, with their state remembered per page.
 
-The [v1.6.0-rc.1 testing prerelease](https://github.com/ModularDevLabs/Illumio-Blocked-Traffic-Extractor/releases/tag/v1.6.0-rc.1) includes all-traffic extraction, partial-output recovery, and large CSV imports. It does not replace stable v1.5.0. See the [release notes](RELEASE_NOTES_v1.6.0-rc.1.md) for details.
+The [v1.6.0-rc.2 testing prerelease](https://github.com/ModularDevLabs/Illumio-Blocked-Traffic-Extractor/releases/tag/v1.6.0-rc.2) adds analysis view persistence and consistent port formatting to the all-traffic extraction, partial-output recovery, and large CSV import improvements. It does not replace stable v1.5.0. See the [release notes](RELEASE_NOTES_v1.6.0-rc.2.md) for details.
+
+Heatmap filters and drilldowns, analytics pivot selections, executive chart settings and report drafts, and collapsed analysis sections are retained within the current browser tab while navigating or refreshing. Importing CSVs, explicitly loading a saved dataset, or completing a new extraction resets the analysis view; saving report settings or a failed import does not. These temporary view choices are separate from saved dataset metadata and theme preferences.
 
 ## Security model
 

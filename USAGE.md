@@ -136,6 +136,12 @@ Report configuration can add a customer name, title, prepared-by value, notes, a
 
 The self-contained HTML report opens with the theme and dataset identity from its source dashboard. Theme changes redraw the charts immediately and are remembered separately for that offline report. Chart range, service, relationship, collapse, and per-section image controls continue to work without the application running. Sections omitted by the Export Composer remain excluded from that offline report.
 
+### Analysis view choices
+
+Within the current browser tab, navigation and Refresh retain heatmap filters and selected cells, analytics pivot selections, executive chart ranges and service selections, comparison months, export choices, unsaved report edits, and collapsed analysis sections. Each heatmap dimension keeps its own filters. Ports display as identifiers such as `9300`, without thousands separators.
+
+Successfully importing CSVs, explicitly loading a saved dataset (even the same dataset), or completing a new extraction starts a fresh analysis view. Failed imports and saving report settings do not reset it. Theme preferences are separate. View choices last for the browser tab's session; use **Save Report Settings** to retain report metadata with a saved dataset. Downloaded executive HTML captures the current chart selections and report edits.
+
 ## 9. CSV Re-Import
 The analytics page can rebuild its visuals from one or more previously exported CSVs from this tool. Multiple files are stitched into one analytics dataset, while their timestamp months remain available in the monthly trend views.
 
